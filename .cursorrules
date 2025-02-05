@@ -1,0 +1,18 @@
+// Pado .cursorrules
+
+// Folder structure
+const folderStructure = `src/
+  index.html`;
+
+// Additional instructions
+const additionalInstructions = `
+
+1. Use TypeScript for type safety
+2. Use SCSS Modules for styling
+3. Implement proper error boundaries
+4. Use environment variables for configuration
+5. Use type aliases instead of interfaces for type declarations.
+6. When modifying existing types, extend from the original type.
+7. Declare types in type files unless they are component-specific.
+8. Lets verify steb by step 
+`;

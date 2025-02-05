@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pado</title>
+  </head>
+  <body>
+    <script type="module" src="./index.ts"></script>
+    <div id="app">
+      <h1>Counter: {a}</h1>
+      <button onclick={buttonClickHandler}>{b}</button>
+      <p>{c.name}</p>
+      <p>{d}</p>
+      <input 
+        type="number" 
+        id="input"
+        value={a}
+        onchange={inputChangeHandler(this)} 
+      />
+      <textarea value={b} onchange={textareaChangeHandler(this)}></textarea>
+      <p>{e}</p>
+      <ul>
+        {@loop d as item}
+        <li>{item}</li>
+        {/loop}
+      </ul>
+    </div>
+  </body>
+</html>
