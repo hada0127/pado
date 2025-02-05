@@ -17,9 +17,40 @@
         id="input"
         value={a}
         onchange={inputChangeHandler(this)} 
+        class={e}
       />
       <textarea value={b} onchange={textareaChangeHandler(this)}></textarea>
-      <p>{e}</p>
+      
+      <select value={a} onchange={selectChangeHandler(this)}>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+      </select>
+      <div>{a} <span>{e}</span></div>
+      <label>
+        <input type="checkbox" onchange={checkboxChangeHandler(this)} pado-checked="{checkboxValue}" />
+        <span>{e}</span>
+      </label>
+      <label>
+        <input 
+          type="radio" 
+          name="radio" 
+          value="1" 
+          onchange={radioChangeHandler(this)} 
+          pado-checked="{radioValue === 1}" 
+        />
+        <span>{radioValue}</span>
+      </label>
+      <label>
+        <input 
+          type="radio" 
+          name="radio" 
+          value="2" 
+          onchange={radioChangeHandler(this)} 
+          pado-checked="{radioValue === 2}" 
+        />
+        <span>{radioValue}</span>
+      </label>
       <ul>
         {@loop d as item}
         <li>{item}</li>
