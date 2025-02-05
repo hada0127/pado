@@ -1,4 +1,4 @@
-import pado from './pado.ts';
+import pado from '../pado/pado';
 
 export let a: number = 1;
 export let b: string = 'hello';
