@@ -4,6 +4,8 @@
 const folderStructure = `
 pado/
   pado.ts
+  vite-plugin-pado.ts
+  eslint-plugin-pado.ts
 src/
   index.html
   index.ts`;

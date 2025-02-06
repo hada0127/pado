@@ -38,6 +38,8 @@
 ### 4차 (0.4.0)
 - 폴더 기반 라우팅 구현
 - Tag, Script, Style 파일 구현 및 분리(page.pado, page.ts, page.scss)
+
+### 5차 (0.5.0)
 - Server 동작, Client 동작 파일 분리(page.server.ts , page.ts, page.pado)
 
 ### 5차 (1.0.0)
