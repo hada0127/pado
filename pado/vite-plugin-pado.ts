@@ -1,7 +1,16 @@
-import type { Plugin } from 'vite';
+import type { Plugin, IndexHtmlTransformContext } from 'vite';
 import { JSDOM } from 'jsdom';
 
-export default function padoPlugin(): Plugin {
+// Plugin 타입 확장
+interface PadoPlugin extends Plugin {
+  order?: 'pre' | 'post';
+  transformIndexHtml?: {
+    order?: 'pre' | 'post';
+    handler: (html: string, ctx: IndexHtmlTransformContext) => string | undefined;
+  };
+}
+
+export default function padoPlugin(): PadoPlugin {
   return {
     name: 'vite-plugin-pado',
     order: 'pre',
