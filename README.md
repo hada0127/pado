@@ -23,11 +23,13 @@
 - &lbrace; 적용 제외
 - 반복문 구현 - 배열의 요소가 변경되면 변경된 요소를 인식하여 변경
 - if문 구현 - 조건이 변경되면 변경된 조건을 인식하여 변경
-- 가능하면 vitePlugin으로 컴파일하여 미리 최적화
+- ✅ 가능하면 vitePlugin으로 컴파일하여 미리 최적화
 
 ### 2차 (0.2.0)
-- 컴포넌트 및 props 기능 구현
-- page.pado, page.ts, component.pado, component.ts 파일 구현
+- 컴포넌트 기능 구현
+- 컴포넌트의 props 기능 구현
+- index.html와 main.pado 분리, index.ts 제거하고 main.ts 파일로 변경
+- component.pado, component.ts 파일 구현
 
 ### 3차 (0.3.0)
 - 빌드 및 Production 모드 구현
@@ -35,7 +37,7 @@
 
 ### 4차 (0.4.0)
 - 폴더 기반 라우팅 구현
-- Tag, Script, Style 파일 분리(page.pado, page.ts, page.scss)
+- Tag, Script, Style 파일 구현 및 분리(page.pado, page.ts, page.scss)
 - Server 동작, Client 동작 파일 분리(page.server.ts , page.ts, page.pado)
 
 ### 5차 (1.0.0)
@@ -46,6 +48,7 @@
 ### 2025-02-06
 - Form 요소의 속성 변경 구현
 - 평가식 구현
+- 가능하면 vitePlugin으로 컴파일하여 미리 최적화
 
 ### 2025-02-05
 - ts파일의 변수와 이벤트 핸들러를 html에 전달

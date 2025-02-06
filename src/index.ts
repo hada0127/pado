@@ -1,18 +1,18 @@
 import pado from '@pado/pado';
 
-export let counterValue: number = 0;
-export let textValue: string = '';
-export let numberValue: number = 0;
-export let dateValue: string = new Date().toISOString().split('T')[0];
-export let timeValue: string = new Date().toISOString().split('T')[1].slice(0, 5);
-export let datetimeLocalValue: string = new Date().toISOString().slice(0, 16);
-export let rangeValue: number = 50;
-export let textareaValue: string = '';
-export let selectValue: number = 1;
-export let checkboxValue: boolean = true;
-export let radioValue: number = 1;
-export let disabledValue: boolean = false;
-export let readonlyValue: boolean = false;
+let counterValue: number = 0;
+let textValue: string = '';
+let numberValue: number = 0;
+let dateValue: string = new Date().toISOString().split('T')[0];
+let timeValue: string = new Date().toISOString().split('T')[1].slice(0, 5);
+let datetimeLocalValue: string = new Date().toISOString().slice(0, 16);
+let rangeValue: number = 50;
+let textareaValue: string = '';
+let selectValue: number = 1;
+let checkboxValue: boolean = true;
+let radioValue: number = 1;
+let disabledValue: boolean = false;
+let readonlyValue: boolean = false;
 
 // 초기 렌더링
 pado({ counterValue, textValue, numberValue, dateValue, timeValue, datetimeLocalValue, rangeValue, textareaValue, selectValue, checkboxValue, radioValue, disabledValue, readonlyValue });
@@ -21,6 +21,7 @@ pado({ counterValue, textValue, numberValue, dateValue, timeValue, datetimeLocal
 
 export const counterIncreaseHandler = () => {
   counterValue++;
+  console.log(counterValue);
   pado({ counterValue });
 };
 

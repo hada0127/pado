@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import path from 'path';
+import padoPlugin from './pado/vite-plugin-pado';
 
 export default defineConfig({
   root: 'src',
@@ -18,5 +19,6 @@ export default defineConfig({
     alias: {
       '@pado': path.resolve(__dirname, 'pado')
     }
-  }
+  },
+  plugins: [padoPlugin()]
 }); 

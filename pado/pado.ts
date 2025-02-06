@@ -49,101 +49,9 @@ const pado = function(variables: Record<string, unknown>): void {
         }
       });
     });
-  }
-
-  // 초기화
-  function init() {
-    const walker = document.createTreeWalker(
-      document.body,
-      NodeFilter.SHOW_TEXT,
-      null
-    );
-
-    // 텍스트 노드 찾기
-    const nodesToProcess: { node: Text }[] = [];
-    let node: Text | null;
-    while ((node = walker.nextNode() as Text)) {
-      const parentElement = node.parentNode as HTMLElement;
-      const text = node.textContent?.trim() || '';
-      
-      // 중괄호가 있는 텍스트만 처리하고, 나머지는 그대로 유지
-      if (parentElement && text.includes('{') && text.includes('}')) {
-        nodesToProcess.push({ node });
-      }
-    }
-
-    // 텍스트 노드 처리
-    nodesToProcess.forEach(({ node }) => {
-      const parentElement = node.parentNode as HTMLElement;
-      if (!parentElement) return;
-
-      // HTML 엔티티가 파싱된 텍스트 얻기
-      const convert: { [key: string]: string } = {
-        "&": "&amp;amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
-      };
-      console.log(parentElement.innerHTML);;
-      // 먼저 기본 HTML 엔티티 변환
-      let text = parentElement.innerHTML
-        .trim()
-        .replace(
-          /(?!&[a-z0-9]+;|&l(?:brace|t|gt);|&r(?:brace|t|gt);|&(?:plus|minus|times|divide);)[&<>"']/g,
-          (match) => convert[match]
-        );
-      
-      // &lbrace;와 &rbrace;를 {와 }로 변환
-      // text = text
-      //   .replace(/&lbrace;/g, '{')
-      //   .replace(/&rbrace;/g, '}');
-
-      console.log(text);
-      
-      // 기존 템플릿이 있다면 그대로 사용
-      if (!parentElement.hasAttribute('pado-text')) {
-        const template = text.replace(/\{([^}]+)\}/g, (match) => {
-          const varName = match.slice(1, -1);
-          return `{${varName}}`;
-        });
-
-        if (template.includes('{')) {
-          parentElement.setAttribute('pado-text', template);
-        }
-      }
-
-      // 텍스트 노드가 비어있지 않은 경우에만 제거
-      if (text) {
-        node.parentNode?.removeChild(node);
-      }
-    });
-
-    // pado-text를 제외한 모든 속성의 중괄호 바인딩을 pado- 접두사로 변환
-    const elements = document.querySelectorAll("*");
-    elements.forEach((element) => {
-      Array.from(element.attributes)
-        .filter(
-          (attr) =>
-            !attr.name.startsWith("pado-") // 이미 pado- 접두사가 붙은 속성은 제외
-        )
-        .forEach((attr) => {
-          const value = attr.value;
-          if (value.startsWith("{") && value.endsWith("}")) {
-            const varName = value.slice(1, -1);
-            // pado- 접두사가 붙은 새 속성 추가
-            element.setAttribute(`pado-${attr.name}`, varName);
-            // 원래 속성 제거 (checked와 같은 boolean 속성의 경우)
-            if (attr.name === 'checked' || attr.name === 'selected' || attr.name === 'disabled') {
-              element.removeAttribute(attr.name);
-            }
-          }
-        });
-    });
     
-    // pado-init 속성 추가
-    document.body.setAttribute("pado-init", "");
   }
+
 
   function evaluateExpression(expression: string, variables: Map<string, unknown>): unknown {
     // 변수들을 객체로 변환
@@ -157,7 +65,6 @@ const pado = function(variables: Record<string, unknown>): void {
       const keys = Object.keys(context);
       const values = Object.values(context);
       const fn = new Function(...keys, `return ${expression};`);
-      console.log(fn(...values));
       return fn(...values);
     } catch (error) {
       console.error('Error evaluating expression:', expression, error);
@@ -409,8 +316,8 @@ const pado = function(variables: Record<string, unknown>): void {
 
   // 최초 실행시에만 템플릿을 변환
   if (!document.querySelector('[pado-init]')) {
-    init();
     processEventHandlers();
+    document.body.setAttribute('pado-init', '');
   }
 
   // DOM 업데이트 실행
