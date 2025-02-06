@@ -74,18 +74,33 @@ const pado = function(variables: Record<string, unknown>): void {
 
     // 텍스트 노드 처리
     nodesToProcess.forEach(({ node }) => {
-      const text = node.textContent?.trim() || '';
       const parentElement = node.parentNode as HTMLElement;
       if (!parentElement) return;
 
-      const decodedText = decodeHTMLEntities(text);
-      console.log(text, decodedText, text !== decodedText);
+      // HTML 엔티티가 파싱된 텍스트 얻기
+      const convert: { [key: string]: string } = {
+        "&": "&amp;amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      };
+      console.log(parentElement.innerHTML);;
+      // 먼저 기본 HTML 엔티티 변환
+      let text = parentElement.innerHTML
+        .trim()
+        .replace(
+          /(?!&[a-z0-9]+;|&l(?:brace|t|gt);|&r(?:brace|t|gt);|&(?:plus|minus|times|divide);)[&<>"']/g,
+          (match) => convert[match]
+        );
+      
+      // &lbrace;와 &rbrace;를 {와 }로 변환
+      // text = text
+      //   .replace(/&lbrace;/g, '{')
+      //   .replace(/&rbrace;/g, '}');
 
-      // 원본 텍스트와 디코딩된 텍스트가 다르다면 HTML 엔티티가 포함된 것
-      if (text !== decodedText) {
-        return;
-      }
-
+      console.log(text);
+      
       // 기존 템플릿이 있다면 그대로 사용
       if (!parentElement.hasAttribute('pado-text')) {
         const template = text.replace(/\{([^}]+)\}/g, (match) => {
@@ -404,11 +419,6 @@ const pado = function(variables: Record<string, unknown>): void {
 
 } as PadoFunction;
 
-// HTML 엔티티 디코딩 함수
-function decodeHTMLEntities(text: string): string {
-  const element = document.createElement('div');
-  element.innerHTML = text;
-  return element.textContent || '';
-}
+
 
 export default pado; 
