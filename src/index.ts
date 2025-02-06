@@ -14,9 +14,8 @@ export let radioValue: number = 1;
 export let disabledValue: boolean = false;
 export let readonlyValue: boolean = false;
 
-
 // 초기 렌더링
-pado({ counterValue, textValue, numberValue: String(numberValue), dateValue, timeValue, datetimeLocalValue, rangeValue, textareaValue, selectValue, checkboxValue, radioValue, disabledValue, readonlyValue });
+pado({ counterValue, textValue, numberValue, dateValue, timeValue, datetimeLocalValue, rangeValue, textareaValue, selectValue, checkboxValue, radioValue, disabledValue, readonlyValue });
 
 // 핸들러 정의
 
