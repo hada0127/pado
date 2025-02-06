@@ -6,51 +6,104 @@
     <title>Pado</title>
   </head>
   <body>
-    <script type="module" src="./index.ts"></script>
+    <script type="module" src="index.ts"></script>
     <div id="app">
-      <h1>Counter: {a}</h1>
-      <button onclick={buttonClickHandler}>{b}</button>
-      <p>{c.name}</p>
-      <p>{d}</p>
+      <h1>Pado</h1>
+      <h2>Counter</h2>
+      <p>value: {counterValue}</p>
+      <button onclick={counterIncreaseHandler}>increase</button>
+      <button onclick={counterDecreaseHandler}>decrease</button>
+      <h2>Expression</h2>
+      <p>&lbrace;3 &plus; 1&rbrace; = {3 + 1}</p>
+      <h2>Form</h2>
+      <h3>Input[text]</h3>
       <input 
-        type="number" 
+        type="text" 
         id="input"
-        value={a}
-        onchange={inputChangeHandler(this)} 
+        value={textValue}
+        onkeyup={inputTextHandler(this)} 
         class={e}
       />
-      <textarea value={b} onchange={textareaChangeHandler(this)}></textarea>
-      
-      <select value={a} onchange={selectChangeHandler(this)}>
+      <p>textValue: {textValue}</p>
+      <h3>Input[number]</h3>
+      <input type="number" value={numberValue} onkeyup={numberHandler(this)}
+      onchange={numberHandler(this)} />
+      <p>numberValue: {numberValue}</p>
+      <h3>Input[date]</h3>
+      <input type="date" value={dateValue} onkeyup={dateHandler(this)}
+      onchange={dateHandler(this)} />
+      <p>dateValue: {dateValue}</p>
+      <h3>Input[time]</h3>
+      <input 
+        type="time" 
+        value={timeValue} 
+        onchange={timeHandler(this)}
+        step="60"
+      />
+      <p>timeValue: {timeValue}</p>
+      <h3>Input[datetime-local]</h3>
+      <input type="datetime-local" value={datetimeLocalValue} onkeyup={datetimeLocalHandler(this)}
+      onchange={datetimeLocalHandler(this)} />
+      <p>datetimeLocalValue: {datetimeLocalValue}</p>
+      <h3>Input[range]</h3>
+      <input type="range" value={rangeValue} 
+      onchange={rangeHandler(this)} />
+      <p>rangeValue: {rangeValue}</p>
+      <h3>Textarea</h3>
+      <textarea value={textareaValue} onkeyup={textareaHandler(this)}></textarea>
+      <p>textareaValue: {textareaValue}</p>
+      <h3>Select</h3>
+      <select value={selectValue} onchange={selectHandler(this)}>
         <option value="1">1</option>
         <option value="2">2</option>
         <option value="3">3</option>
       </select>
-      <div>{a} <span>{e}</span></div>
+      <p>selectValue: {selectValue}</p>
+      <h3>Checkbox</h3>
       <label>
-        <input type="checkbox" onchange={checkboxChangeHandler(this)} pado-checked="{checkboxValue}" />
-        <span>{e}</span>
+        <input type="checkbox" onchange={checkboxHandler(this)} pado-checked="{checkboxValue}" />
+        <span>{checkboxValue}</span>
       </label>
+      <h3>Radio</h3>
       <label>
         <input 
           type="radio" 
           name="radio" 
           value="1" 
-          onchange={radioChangeHandler(this)} 
+          onchange={radioHandler(this)} 
           pado-checked="{radioValue === 1}" 
         />
-        <span>{radioValue}</span>
+        <span>1</span>
       </label>
       <label>
         <input 
           type="radio" 
           name="radio" 
           value="2" 
-          onchange={radioChangeHandler(this)} 
+          onchange={radioHandler(this)} 
           pado-checked="{radioValue === 2}" 
         />
-        <span>{radioValue}</span>
+        <span>2</span>
       </label>
+      <p>radioValue: {radioValue}</p>
+      <h3>Disabled</h3>
+      <label>
+      <input type="checkbox" value={disabledValue} onchange={disabledHandler(this)} />
+        <span>Toggle Disable</span>
+      </label>
+      <p>
+      <input type="checkbox" disabled={disabledValue} /></p>
+      <p>disabledValue: {disabledValue}</p>
+      <h3>Readonly</h3>
+      <label>
+      <input type="checkbox" value={readonlyValue} onchange={readonlyHandler(this)} />
+        <span>Toggle Readonly</span>
+      </label>
+      <p>
+      <input type="text" readonly={readonlyValue} /></p>
+      <p>readonlyValue: {readonlyValue}</p>
+
+      <h2>Loop</h2>
       <ul>
         {@loop d as item}
         <li>{item}</li>

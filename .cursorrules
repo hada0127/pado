@@ -1,8 +1,12 @@
 // Pado .cursorrules
 
 // Folder structure
-const folderStructure = `src/
-  index.html`;
+const folderStructure = `
+pado/
+  pado.ts
+src/
+  index.html
+  index.ts`;
 
 // Additional instructions
 const additionalInstructions = `

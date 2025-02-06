@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import path from 'path';
 
 export default defineConfig({
   root: 'src',
@@ -6,6 +7,16 @@ export default defineConfig({
     open: true
   },
   build: {
-    outDir: '../dist'
+    outDir: '../dist',
+    lib: {
+      entry: path.resolve(__dirname, 'pado/pado.ts'),
+      name: 'pado',
+      fileName: (format) => `pado.${format}.js`
+    }
+  },
+  resolve: {
+    alias: {
+      '@pado': path.resolve(__dirname, 'pado')
+    }
   }
 }); 
