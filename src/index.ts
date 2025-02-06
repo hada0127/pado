@@ -1,4 +1,4 @@
-import pado from '@pado/pado';
+import pado from '@pado';
 
 let counterValue: number = 0;
 let textValue: string = '';

@@ -17,7 +17,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@pado': path.resolve(__dirname, 'pado')
+      '@pado': path.resolve(__dirname, 'pado/pado.ts')
     }
   },
   plugins: [padoPlugin()]
