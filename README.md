@@ -9,6 +9,7 @@
 4. 가급적 사용이 쉽도록
 5. 성능엔 크게 중심을 두지 않는다. 일반적인 장비에서 문제가 없을 정도로만 최대한 간결하게 구현
 6. Dom Update는 업데이트 되어야 하는 항목만 수동으로 명확하게 할 것
+7. 풀스택 웹사이트 개발이 가능할 것
 
 ## Roadmap
 ### 1차 (0.1.0)
@@ -39,11 +40,12 @@
 - 폴더 기반 라우팅 구현
 - Tag, Script, Style 파일 구현 및 분리(page.pado, page.ts, page.scss)
 - `[slug]` 기능 구현
+- `(group)` 기능 구현
 
-### 6차 (0.6.0)
+### 5차 (0.5.0)
 - Server 동작, Client 동작 파일 분리(page.server.ts , page.ts, page.pado)
 
-### 5차 (1.0.0)
+### 6차 (1.0.0)
 - Server Side Rendering 구현 (page.server.pado)
 - 컴포넌트의 Server Side Rendering 구현 (component.server.pado)
 
