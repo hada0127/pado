@@ -4,10 +4,10 @@ import { JSDOM } from 'jsdom';
 export default function padoPlugin(): Plugin {
   return {
     name: 'vite-plugin-pado',
-    enforce: 'pre',
+    order: 'pre',
     transformIndexHtml: {
-      enforce: 'pre',
-      transform(html, { filename }) {
+      order: 'pre',
+      handler(html, { filename }) {
         // .html 또는 .pado 파일만 처리
         if (!filename?.endsWith('.html') && !filename?.endsWith('.pado')) {
           return html;
