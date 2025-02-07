@@ -21,15 +21,16 @@
 - ✅ Dom에 업데이트는 수동으로 명확하게 할 것
 - ✅ 변경된 변수만 Dom에 업데이트 가능하도록
 - ✅ 평가식 구현
-- `&lbrace;` 적용 제외
+- ✅ `&lbrace;` 적용 제외
 - 반복문 구현 - 배열의 요소가 변경되면 변경된 요소를 인식하여 변경
 - if문 구현 - 조건이 변경되면 변경된 조건을 인식하여 변경
 - ✅ 가능하면 vitePlugin으로 컴파일하여 미리 최적화
 
 ### 2차 (0.2.0)
+- ✅ index.html와 app/page.pado 분리, index.ts 제거하고 page.ts 파일로 변경
+- ✅ .pado 파일이 보일시 같은 이름의 .ts파일 자동 로딩
 - 컴포넌트 기능 구현
 - 컴포넌트의 props 기능 구현
-- index.html와 main.pado 분리, index.ts 제거하고 main.ts 파일로 변경
 - component.pado, component.ts 파일 구현
 
 ### 3차 (0.3.0)
@@ -50,6 +51,11 @@
 - 컴포넌트의 Server Side Rendering 구현 (component.server.pado)
 
 ## 구현 현황
+### 2025-02-07
+- `&lbrace;` 적용 제외
+- index.html와 main.pado 분리, index.ts 제거하고 main.ts 파일로 변경
+- .pado 파일이 보일시 같은 이름의 .ts파일 자동 로딩
+
 ### 2025-02-06
 - Form 요소의 속성 변경 구현
 - 평가식 구현

@@ -8,7 +8,9 @@ pado/
   eslint-plugin-pado.ts
 src/
   index.html
-  index.ts`;
+  app/
+    main.pado
+    madin.ts`;
 
 // Additional instructions
 const additionalInstructions = `

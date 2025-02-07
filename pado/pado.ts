@@ -52,24 +52,101 @@ const pado = function(variables: Record<string, unknown>): void {
     
   }
 
+  // 평가식에서 사용된 변수들을 찾는 함수
+  function getExpressionVars(expr: string): string[] {
+    // 먼저 문자열 리터럴을 임시 토큰으로 대체
+    const stringLiterals: string[] = [];
+    const exprWithoutStrings = expr.replace(/(['"])((?:\\\1|.)*?)\1/g, (match) => {
+      stringLiterals.push(match);
+      return `__STR${stringLiterals.length - 1}__`;
+    });
+
+    // 변수명 매칭을 위한 정규식
+    const varPattern = /\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g;
+    const matches = exprWithoutStrings.matchAll(varPattern);
+    
+    return Array.from(new Set(
+      Array.from(matches, m => m[1])
+    )).filter(name => 
+      // JavaScript 예약어와 임시 토큰 제외
+      !['true', 'false', 'null', 'undefined', 'NaN', 'Infinity'].includes(name) &&
+      !name.startsWith('__STR')
+    );
+  }
 
   function evaluateExpression(expression: string, variables: Map<string, unknown>): unknown {
     // 변수들을 객체로 변환
     const context: Record<string, unknown> = {};
-    variables.forEach((value, key) => {
-      context[key] = value;
+    
+    // 평가식에서 사용된 변수들만 추출
+    const usedVars = getExpressionVars(expression);
+    
+    // 평가식에 사용된 변수가 모두 있는지 확인
+    const hasAllVars = usedVars.every(v => variables.has(v));
+    if (!hasAllVars) {
+      return undefined;
+    }
+
+    // 실제 사용된 변수만 context에 추가
+    usedVars.forEach(varName => {
+      context[varName] = variables.get(varName);
     });
 
     try {
-      // Function 생성자를 사용하여 평가식 실행
-      const keys = Object.keys(context);
-      const values = Object.values(context);
-      const fn = new Function(...keys, `return ${expression};`);
-      return fn(...values);
+      // 표현식 정리 및 문자열 처리
+      const processedExpr = expression
+        .replace(/\s+/g, ' ')  // 연속된 공백을 하나로
+        .replace(/(['"])((?:\\\1|.)*?)\1/g, match => {  // 문자열 리터럴 처리
+          return match.startsWith("'") ? `"${match.slice(1, -1)}"` : match;
+        })
+        .trim();
+
+        // 표현식이 비어있거나 불완전한 경우 처리
+        if (!processedExpr || processedExpr.endsWith('===') || processedExpr.endsWith('==') || 
+            processedExpr.endsWith('!==') || processedExpr.endsWith('!=')) {
+          return undefined;
+        }
+
+        const keys = Object.keys(context);
+        const values = Object.values(context);
+        const fn = new Function(...keys, `return ${processedExpr};`);
+        const result = fn(...values);
+        return result;
     } catch (error) {
       console.error('Error evaluating expression:', expression, error);
-      return false;
+      return undefined;
     }
+  }
+
+  // 평가식 처리를 위한 공통 함수
+  function processExpression(expression: string | null, argsMap: Map<string, unknown>, updatedVars: Set<string>): {
+    value: unknown;
+    shouldUpdate: boolean;
+  } {
+    if (!expression) {
+      return { value: undefined, shouldUpdate: false };
+    }
+    // 중괄호로 감싸진 평가식 처리
+    let expr = expression;
+    if (expr.startsWith('{') && expr.endsWith('}')) {
+      expr = expr.slice(1, -1);
+    }
+    
+
+    // 평가식에서 사용된 변수들 추출
+    const usedVars = getExpressionVars(expr);
+    
+    // 사용된 변수 중 하나라도 업데이트되었는지 확인
+    const shouldUpdate = usedVars.some(v => updatedVars.has(v));
+    if (!shouldUpdate) {
+      return { value: undefined, shouldUpdate: false };
+    }
+
+    // 평가식 실행
+    const value = evaluateExpression(expr, argsMap);
+    // console.log('Processing expression:', expr, value);
+
+    return { value, shouldUpdate: true };
   }
 
   // 변수명에 해당하는 모든 DOM 요소 업데이트
@@ -77,12 +154,63 @@ const pado = function(variables: Record<string, unknown>): void {
     const argsMap = new Map<string, unknown>(Object.entries(variables));
     const updatedVars = new Set(argsMap.keys());
 
-    // 평가식에서 사용된 변수들을 찾는 함수
-    function getExpressionVars(expr: string): string[] {
-      return Array.from(new Set(
-        expr.match(/[a-zA-Z_][a-zA-Z0-9_]*/g) || []
-      ));
-    }    
+    // 조건부 렌더링 처리
+    const ifGroups = new Set(
+      Array.from(document.querySelectorAll('[pado-if]')).map(el => 
+        el.getAttribute('pado-ifgroup')
+      )
+    );
+
+    ifGroups.forEach(groupName => {
+      if (!groupName) return;
+      
+      const groupElements = document.querySelectorAll(`[pado-ifgroup="${groupName}"]`);
+      
+      // 그룹의 조건식에 전달된 변수가 있는지 확인
+      const hasUpdatedVar = Array.from(groupElements).some(element => {
+        const condition = element.getAttribute('pado-if') || element.getAttribute('pado-elseif');
+        if (!condition) return;
+        
+        const vars = getExpressionVars(condition);
+        return vars.some(v => argsMap.has(v));
+      });
+
+      // 전달된 변수가 없으면 처리하지 않음
+      if (!hasUpdatedVar) return;
+
+      let conditionMet = false;
+
+      // 모든 요소를 먼저 숨김
+      groupElements.forEach(element => {
+        (element as HTMLElement).style.display = 'none';
+      });
+
+      // if와 elseif 조건 검사
+      for (const element of groupElements) {
+        const ifCondition = element.getAttribute('pado-if');
+        const elseifCondition = element.getAttribute('pado-elseif');
+        
+        if (ifCondition || elseifCondition) {
+          const condition = ifCondition || elseifCondition;
+          if (!condition) continue;
+          
+          const value = evaluateExpression(condition, argsMap);
+          if (value) {
+            (element as HTMLElement).style.display = 'inline';
+            conditionMet = true;
+            break;
+          }
+        }
+      }
+
+      // else 처리
+      if (!conditionMet) {
+        const elseElement = Array.from(groupElements).find(el => el.hasAttribute('pado-else'));
+        if (elseElement) {
+          (elseElement as HTMLElement).style.display = 'inline';
+        }
+      }
+    });
 
     // pado-text 처리
     let elements = document.querySelectorAll('[pado-text]');
@@ -97,39 +225,12 @@ const pado = function(variables: Record<string, unknown>): void {
       if (matches) {
         matches.forEach(match => {
           const expression = match.slice(1, -1);
-          
-          // 표현식 처리 (예: a + 1 또는 단순 변수)
-          if (
-            expression.includes("+") ||
-            expression.includes("-") ||
-            expression.includes("*") ||
-            expression.includes("/") ||
-            expression.includes("%") ||
-            expression.includes("!") ||
-            expression.includes("?") ||
-            expression.includes("=") ||
-            expression.includes("&") ||
-            expression.includes("|")
-          ) {
+          const { value, shouldUpdate: exprShouldUpdate } = processExpression(expression, argsMap, updatedVars);
+
+          // console.log('Processing expression:', expression, value);
+          if (exprShouldUpdate) {
             shouldUpdate = true;
-            const value = evaluateExpression(expression, argsMap);
             result = result.replace(match, String(value));
-          } else {
-            // 단순 변수 처리
-            const baseVar = expression.split('.')[0];
-            if (argsMap.has(baseVar)) {
-              shouldUpdate = true;
-              if (expression.includes('.')) {
-                const [name, prop] = expression.split('.');
-                const value = argsMap.get(name);
-                if (typeof value === 'object' && value !== null) {
-                  result = result.replace(match, String((value as Record<string, unknown>)[prop]));
-                }
-              } else {
-                const value = argsMap.get(expression);
-                result = result.replace(match, String(value));
-              }
-            }
           }
         });
       }
@@ -143,172 +244,66 @@ const pado = function(variables: Record<string, unknown>): void {
     elements = document.querySelectorAll('*');
     elements.forEach((element: Element) => {
       Array.from(element.attributes)
-        .filter(attr => 
-          attr.name.startsWith("pado-") &&
-          attr.name !== "pado-text" &&
-          attr.name !== "pado-init"
+        .filter(
+          (attr) =>
+            attr.name.startsWith("pado-") &&
+            attr.name !== "pado-text" &&
+            attr.name !== "pado-init" &&
+            attr.name !== "pado-if" &&
+            attr.name !== "pado-elseif" &&
+            attr.name !== "pado-else"
         )
         .forEach((attr) => {
           const originalAttrName = attr.name.replace("pado-", "");
-          let bindingValue = attr.value;
+          const { value, shouldUpdate } = processExpression(attr.value, argsMap, updatedVars);
           
-          if (bindingValue.startsWith('{') && bindingValue.endsWith('}')) {
-            bindingValue = bindingValue.slice(1, -1);
-          }
-          
-          // 평가식 처리 (예: radioValue === 1 또는 disabledValue)
+          if (!shouldUpdate || value === undefined) return;
+
+          // boolean 속성 처리 (checked, disabled, readonly)
           if (
-            bindingValue.includes("+") ||
-            bindingValue.includes("-") ||
-            bindingValue.includes("*") ||
-            bindingValue.includes("/") ||
-            bindingValue.includes("%") ||
-            bindingValue.includes("!") ||
-            bindingValue.includes("?") ||
-            bindingValue.includes("=") ||
-            bindingValue.includes("!") ||
-            bindingValue.includes("&") ||
-            bindingValue.includes("|") ||
-            typeof argsMap.get(bindingValue) === "boolean"  // boolean 타입 체크 추가
+            originalAttrName === "checked" ||
+            originalAttrName === "disabled" ||
+            originalAttrName === "readonly"
           ) {
-            
-            // 평가식에서 사용된 모든 변수 추출
-            const vars = getExpressionVars(bindingValue);
-            // 평가식에 사용된 변수 중 하나라도 업데이트되었다면 처리
-            if (vars.some(v => updatedVars.has(v))) {
-              const value = evaluateExpression(bindingValue, argsMap);
-
-              // boolean 속성 처리 (checked, disabled, readonly)
-              if (
-                originalAttrName === "checked" ||
-                originalAttrName === "disabled" ||
-                originalAttrName === "readonly"
-              ) {
-                const boolValue = Boolean(value);
-                if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-                  if (originalAttrName === "readonly") {
-                    //element.readOnly = boolValue;
-                    
-                    if (boolValue) {
-                      element.setAttribute("readonly", "");
-                    } else {
-                      element.removeAttribute("readonly");
-                    }
-                  } else if (originalAttrName === "disabled") {
-                    element.disabled = boolValue;
-                    if (boolValue) {
-                      element.setAttribute("disabled", "");
-                    } else {
-                      element.removeAttribute("disabled");
-                    }
-                  } else if (element instanceof HTMLInputElement && originalAttrName === "checked") {
-                    element.checked = boolValue;
-                    if (boolValue) {
-                      element.setAttribute("checked", "");
-                    } else {
-                      element.removeAttribute("checked");
-                    }
-                  }
+            const boolValue = Boolean(value);
+            if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+              if (originalAttrName === "readonly") {
+                //element.readOnly = boolValue;
+                
+                if (boolValue) {
+                  element.setAttribute("readonly", "");
+                } else {
+                  element.removeAttribute("readonly");
                 }
-              }
-              // value 속성은 특별 처리
-              else if (
-                (originalAttrName === "value" &&
-                  (element instanceof HTMLInputElement ||
-                    element instanceof HTMLTextAreaElement)) ||
-                element instanceof HTMLSelectElement
-              ) {
-                element.value = String(value);
-              }
-              // 나머지 속성들은 setAttribute로 처리
-              else {
-                element.setAttribute(originalAttrName, String(value));
-              }
-            }
-          } else {
-            // 단순 바인딩 처리
-            const baseVar = bindingValue.split(".")[0];
-            if (updatedVars.has(baseVar)) {
-              let value: unknown;
-
-              // 평가식 처리 (예: radioValue === 1)
-              if (
-                bindingValue.includes("+") ||
-                bindingValue.includes("-") ||
-                bindingValue.includes("*") ||
-                bindingValue.includes("/") ||
-                bindingValue.includes("%") ||
-                bindingValue.includes("!") ||
-                bindingValue.includes("?") ||
-                bindingValue.includes("===") ||
-                bindingValue.includes("!==") ||
-                bindingValue.includes("&&") ||
-                bindingValue.includes("||")
-              ) {
-                value = evaluateExpression(bindingValue, argsMap);
-              }
-              // 기존 단순 바인딩 처리
-              else if (argsMap.has(baseVar)) {
-                value = argsMap.get(baseVar);
-                // 객체의 속성 접근 처리 (예: c.name)
-                if (bindingValue.includes(".")) {
-                  const [_, prop] = bindingValue.split(".");
-                  if (typeof value === "object" && value !== null) {
-                    value = (value as Record<string, unknown>)[prop];
-                  }
+              } else if (originalAttrName === "disabled") {
+                element.disabled = boolValue;
+                if (boolValue) {
+                  element.setAttribute("disabled", "");
+                } else {
+                  element.removeAttribute("disabled");
                 }
-              }
-              // value가 undefined가 아닌 경우에만 처리
-              if (value !== undefined) {
-                // boolean 속성 처리 (checked, selected, disabled)
-                if (
-                  originalAttrName === "checked" ||
-                  originalAttrName === "selected" ||
-                  originalAttrName === "disabled"
-                ) {
-                  if (element instanceof HTMLInputElement) {
-                    // 라디오 버튼의 경우 value와 비교하여 checked 설정
-                    if (element.type === 'radio') {
-                      const isChecked = Boolean(value);
-                      element.checked = isChecked;
-                      if (isChecked) {
-                        element.setAttribute(originalAttrName, "");
-                      } else {
-                        element.removeAttribute(originalAttrName);
-                      }
-                    } else {
-                      // 다른 input 요소들 처리
-                      element.checked = Boolean(value);
-                      if (value) {
-                        element.setAttribute(originalAttrName, "");
-                      } else {
-                        element.removeAttribute(originalAttrName);
-                      }
-                    }
-                  } else {
-                    // input 이외의 요소들 처리
-                    if (value) {
-                      element.setAttribute(originalAttrName, "");
-                    } else {
-                      element.removeAttribute(originalAttrName);
-                    }
-                  }
-                }
-                // value 속성은 특별 처리
-                else if (
-                  (originalAttrName === "value" &&
-                    (element instanceof HTMLInputElement ||
-                      element instanceof HTMLTextAreaElement)) ||
-                  element instanceof HTMLSelectElement
-                ) {
-                  element.value = String(value);
-                }
-                // 나머지 속성들은 setAttribute로 처리
-                else {
-                  element.setAttribute(originalAttrName, String(value));
+              } else if (element instanceof HTMLInputElement && originalAttrName === "checked") {
+                element.checked = boolValue;
+                if (boolValue) {
+                  element.setAttribute("checked", "");
+                } else {
+                  element.removeAttribute("checked");
                 }
               }
             }
+          }
+          // value 속성은 특별 처리
+          else if (
+            (originalAttrName === "value" &&
+              (element instanceof HTMLInputElement ||
+                element instanceof HTMLTextAreaElement)) ||
+            element instanceof HTMLSelectElement
+          ) {
+            element.value = String(value);
+          }
+          // 나머지 속성들은 setAttribute로 처리
+          else {
+            element.setAttribute(originalAttrName, String(value));
           }
         });
     });

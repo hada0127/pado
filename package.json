@@ -12,10 +12,8 @@
     "@html-eslint/parser": "^0.34.0",
     "@types/eslint": "^9.6.1",
     "@types/estree": "^1.0.6",
-    "@types/jsdom": "^21.1.7",
     "@types/node": "^20.0.0",
     "eslint-plugin-pado": "file:./pado/eslint-plugin-pado",
-    "jsdom": "^26.0.0",
     "typescript": "^5.0.0",
     "vite": "^5.0.0"
   }

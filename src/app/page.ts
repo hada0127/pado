@@ -13,21 +13,22 @@ let checkboxValue: boolean = true;
 let radioValue: number = 1;
 let disabledValue: boolean = false;
 let readonlyValue: boolean = false;
+let ifValue: number = 1;
+let ifValue2: string = 'a';
 
 // 초기 렌더링
-pado({ counterValue, textValue, numberValue, dateValue, timeValue, datetimeLocalValue, rangeValue, textareaValue, selectValue, checkboxValue, radioValue, disabledValue, readonlyValue });
+pado({ counterValue, textValue, numberValue, dateValue, timeValue, datetimeLocalValue, rangeValue, textareaValue, selectValue, checkboxValue, radioValue, disabledValue, readonlyValue, ifValue, ifValue2 });
 
 // 핸들러 정의
 
 export const counterIncreaseHandler = () => {
   counterValue++;
-  console.log(counterValue);
-  pado({ counterValue });
+  pado({ counterValue, numberValue });
 };
 
 export const counterDecreaseHandler = () => {
   counterValue--;
-  pado({ counterValue });
+  pado({ counterValue, numberValue });
 };
 
 export const inputTextHandler = (element: HTMLInputElement) => {
@@ -37,7 +38,7 @@ export const inputTextHandler = (element: HTMLInputElement) => {
 
 export const numberHandler = (element: HTMLInputElement) => {
   numberValue = Number(element.value);
-  pado({ numberValue });
+  pado({ counterValue, numberValue });
 };
 
 export const dateHandler = (element: HTMLInputElement) => {
@@ -88,4 +89,14 @@ export const disabledHandler = (element: HTMLInputElement) => {
 export const readonlyHandler = (element: HTMLInputElement) => {
   readonlyValue = element.checked;
   pado({ readonlyValue });
+};
+
+export const ifHandler = (element: HTMLInputElement) => {
+  ifValue = Number(element.value);
+  pado({ ifValue });
+};
+
+export const if2Handler = (element: HTMLInputElement) => {
+  ifValue2 = element.value;
+  pado({ ifValue2 });
 };
