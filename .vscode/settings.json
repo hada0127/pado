@@ -1,0 +1,17 @@
+{
+  "eslint.validate": [
+    "javascript",
+    "typescript",
+    "html"
+  ],
+  "files.associations": {
+    "*.pado": "html"
+  },
+  "emmet.includeLanguages": {
+    "pado": "html"
+  },
+  "[pado]": {
+    "editor.defaultFormatter": "vscode.html-language-features"
+  }
+} 
+ 
