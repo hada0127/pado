@@ -53,7 +53,7 @@
 ## 구현 현황
 ### 2025-02-07
 - `&lbrace;` 적용 제외
-- index.html와 main.pado 분리, index.ts 제거하고 main.ts 파일로 변경
+- index.html와 app/page.pado 분리, index.ts 제거하고 page.ts 파일로 변경
 - .pado 파일이 보일시 같은 이름의 .ts파일 자동 로딩
 
 ### 2025-02-06
