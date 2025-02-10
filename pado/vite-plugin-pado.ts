@@ -13,96 +13,212 @@ function escapeHtml(text: string): string {
   }[char] || char));
 }
 
-// 조건부 렌더링 처리 함수
-function processConditionals(html: string): string {
-  const timestamp = Date.now();
-  let groupCounter = 0;
-
-  // 중첩된 if 블록을 찾아서 처리
-  function processNestedIf(content: string): string {
-    const ifStartPattern = /{@if\(([^)]+)\)}/;
-    const ifEndPattern = /{\/if}/;
-    
-    const startMatch = content.match(ifStartPattern);
-    if (!startMatch) return content;
-
-    // 첫 번째 if 시작 위치
-    const startIndex = startMatch.index!;
-    const condition = startMatch[1];
-    let depth = 1;
-    let endIndex = startIndex;
-
-    // 대응되는 마지막 /if 찾기
-    for (let i = startIndex + startMatch[0].length; i < content.length; i++) {
-      if (content.slice(i).startsWith('{@if')) {
-        depth++;
-      } else if (content.slice(i).startsWith('{/if}')) {
-        depth--;
-        if (depth === 0) {
-          endIndex = i + 5; // '{/if}'.length = 5
-          break;
-        }
-      }
-    }
-
-    // 첫 번째 if 이전 내용
-    const prevHtml = content.slice(0, startIndex);
-    // 마지막 /if 이후 내용
-    const nextHtml = content.slice(endIndex);
-    // if 블록 내부 내용
-    const innerContent = content.slice(startIndex + startMatch[0].length, endIndex - 5);
-
-    // 내부 if 블록 재귀 처리
-    const processedInner = processNestedIf(innerContent);
-    
-    // 처리된 if 블록 생성
-    const processedIf = `{@if(${condition})}${processedInner}{/if}`;
-
-    // 전체 내용 합치기
-    return prevHtml + processedIf + processNestedIf(nextHtml);
-  }
-
-  // 중첩된 if 처리 후 최종 변환
-  const processedHtml = processNestedIf(html);
-  
-  // 최종 if 블록 변환
-  return processedHtml.replace(
-    /{@if\(([^)]+)\)}([\s\S]*?)(?:{@elseif\(([^)]+)\)}([\s\S]*?))*(?:{@else}([\s\S]*?))?{\/if}/g,
-    (match, ifCondition, ifContent, elseifCondition, elseifContent, elseContent) => {
-      const groupName = `ifgroup_${timestamp}_${groupCounter++}`;
-      const style = 'display: none;padding: 0; margin: 0;';
-      let result = '';
-
-      // 문자열 리터럴 처리
-      const processCondition = (cond: string) => {
-        return cond.replace(/(['"])((?:\\\1|.)*?)\1/g, match => {
-          return match.startsWith("'") ? `"${match.slice(1, -1)}"` : match;
-        });
-      };
-
-      // if 블록 처리
-      result = `<div pado-if="${processCondition(ifCondition)}" pado-ifgroup="${groupName}" style="${style}">${ifContent}</div>`;
-
-      // elseif 블록들 처리
-      if (elseifCondition) {
-        result += `<div pado-elseif="${processCondition(elseifCondition)}" pado-ifgroup="${groupName}" style="${style}">${elseifContent}</div>`;
-      }
-
-      // else 블록 처리
-      if (elseContent) {
-        result += `<div pado-else pado-ifgroup="${groupName}" style="${style}">${elseContent}</div>`;
-      }
-
-      return result;
+// 공통 컨텐츠 변환 함수
+function transformContent(content: string): string {
+  // 1. 속성 변환 (중괄호 표현식을 pado- 속성으로 변환)
+  let transformed = content.replace(
+    /(\s)(\w+)=(?:["']\{([^}]+)\}["']|[\{]([^}]+)[\}])/g,
+    (match, space, attr, expr1, expr2) => {
+      if (attr.startsWith('on')) return match;
+      const expr = (expr1 || expr2).trim();
+      return `${space}pado-${attr}="${expr}"`;
     }
   );
+
+  // 2. 텍스트 노드 변환
+  transformed = transformed.replace(
+    /(<[^>]*>)([^<]+)(<\/[^>]*>)/g,
+    (match, openTag, text, closeTag) => {
+      if (text && text.includes('{') && text.includes('}')) {
+        const escapedText = escapeHtml(text.trim());
+        return `${openTag.replace(/>$/, ` pado-text="${escapedText}">`)}${closeTag}`;
+      }
+      return match;
+    }
+  );
+
+  return transformed;
+}
+
+// 가장 바깥쪽 if문부터 처리하는 재귀 함수
+function processNestedConditionals(content: string, fileId: string, counter: { value: number }): {
+  html: string;
+  conditions: Array<{
+    groupName: string;
+    blocks: Array<{
+      type: 'if' | 'elseif' | 'else';
+      condition?: string;
+      content: string;
+    }>;
+  }>;
+} {
+  const conditions: Array<{
+    groupName: string;
+    blocks: Array<{
+      type: 'if' | 'elseif' | 'else';
+      condition?: string;
+      content: string;
+    }>;
+  }> = [];
+
+  let result = content;
+  let startIndex = 0;
+
+  while (startIndex < result.length) {
+    // if 시작 위치 찾기
+    const ifStart = result.indexOf('{@if(', startIndex);
+    if (ifStart === -1) break;
+
+    // 해당 if문의 끝 위치 찾기
+    let depth = 1;
+    let ifEnd = ifStart;
+    let searchIndex = ifStart + 5;  // '{@if('.length
+
+    while (depth > 0 && searchIndex < result.length) {
+      if (result.startsWith('{@if(', searchIndex)) {
+        depth++;
+        searchIndex += 5;
+      } else if (result.startsWith('{/if}', searchIndex)) {
+        depth--;
+        if (depth === 0) {
+          ifEnd = searchIndex + 5;  // '{/if}'.length
+          break;
+        }
+        searchIndex += 5;
+      } else {
+        searchIndex++;
+      }
+    }
+
+    if (depth === 0) {
+      // 완전한 if 블록을 찾음
+      const fullMatch = result.slice(ifStart, ifEnd);
+      const ifConditionMatch = fullMatch.match(/{@if\(([^)]+)\)}/);
+      if (ifConditionMatch) {
+        const ifCondition = ifConditionMatch[1];
+        const innerContent = fullMatch.slice(ifConditionMatch[0].length, -5);  // -5 for '{/if}'
+
+        const groupName = `${fileId}_if_${counter.value++}`;
+        const blocks: Array<{
+          type: 'if' | 'elseif' | 'else';
+          condition?: string;
+          content: string;
+        }> = [];
+
+        // 내부 if문 먼저 처리
+        const { html: processedInnerContent, conditions: innerConditions } = processNestedConditionals(innerContent, fileId, counter);
+        conditions.push(...innerConditions);
+
+        // if/elseif/else 블록 분리
+        const parts = processedInnerContent.split(/(?={@elseif\()|(?={@else})/);
+        
+        // if 블록
+        blocks.push({
+          type: 'if',
+          condition: ifCondition.trim(),
+          content: transformContent(parts[0].trim())
+        });
+
+        // elseif/else 블록들
+        for (let i = 1; i < parts.length; i++) {
+          const part = parts[i];
+          if (part.startsWith('{@elseif(')) {
+            const elseifMatch = part.match(/{@elseif\(([^)]+)\)}([\s\S]*)/);
+            if (elseifMatch) {
+              blocks.push({
+                type: 'elseif',
+                condition: elseifMatch[1].trim(),
+                content: transformContent(elseifMatch[2].trim())
+              });
+            }
+          } else if (part.startsWith('{@else}')) {
+            blocks.push({
+              type: 'else',
+              content: transformContent(part.slice(7).trim())  // 7 is '{@else}'.length
+            });
+          }
+        }
+
+        conditions.push({ groupName, blocks });
+        result = result.slice(0, ifStart) + `<!-- if:${groupName} -->` + result.slice(ifEnd);
+      }
+    }
+    startIndex = ifStart + 1;
+  }
+
+  return { html: result, conditions };
+}
+
+// 기존 processConditionals 함수 수정
+function processConditionals(html: string, filePath: string): {
+  html: string;
+  conditions: Array<{
+    groupName: string;
+    blocks: Array<{
+      type: 'if' | 'elseif' | 'else';
+      condition?: string;
+      content: string;
+    }>;
+  }>;
+} {
+  const relativePath = path.relative(path.join(process.cwd(), 'src', 'app'), filePath);
+  const fileId = relativePath.replace(/\.pado$/, '').replace(/[\\/]/g, '_');
+  
+  return processNestedConditionals(html, fileId, { value: 0 });
 }
 
 export default function padoPlugin(): Plugin {
+  // 캐시 디렉토리 생성
+  const cacheDir = path.resolve('pado/cache');
+  if (!fs.existsSync(cacheDir)) {
+    fs.mkdirSync(cacheDir, { recursive: true });
+  }
+
+  // pado 파일 전체 변환 처리
+  function transformPadoContent(content: string, filePath: string): string {
+    // 1. 조건부 렌더링 처리
+    const { html: processedContent, conditions } = processConditionals(content, filePath);
+
+    // 2. 전체 컨텐츠 변환
+    const transformedHtml = transformContent(processedContent);
+
+    return JSON.stringify({
+      html: transformedHtml,
+      conditions,
+      timestamp: Date.now()
+    }, null, 2);
+  }
+
+  // 캐시 파일 생성 함수
+  function createCache(filePath: string, content: string) {
+    const relativePath = path.relative(process.cwd(), filePath);
+    if (relativePath.startsWith('src/app')) {
+      const cachePath = path.join(
+        cacheDir,
+        relativePath.replace(/^src\/app/, 'app').replace(/\.[^.]+$/, '.json')
+      );
+
+      // 캐시 디렉토리 생성
+      fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+
+      // 변환된 내용 저장
+      fs.writeFileSync(cachePath, content);
+
+      return cachePath;
+    }
+    return null;
+  }
+
   return {
     name: 'vite-plugin-pado',
     handleHotUpdate({ file, server }) {
-      if (file.endsWith('.pado')) {
+      if (file.endsWith('.pado') || file.endsWith('.ts')) {
+        if (file.endsWith('.pado')) {
+          const padoContent = fs.readFileSync(file, 'utf-8');
+          const transformedContent = transformPadoContent(padoContent, file);
+          createCache(file, transformedContent);
+        }
+
         server.ws.send({
           type: 'full-reload',
           path: '*'
@@ -111,53 +227,52 @@ export default function padoPlugin(): Plugin {
       }
     },
     transformIndexHtml(html: string, { filename }) {
-      // .pado 파일 내용 로드 및 변환
-      html = html.replace(
+      return html.replace(
         /<!--\s*@pado\s+src="([^"]+)"\s*-->/g,
         (_, src) => {
           const padoPath = path.resolve(path.dirname(filename), src);
-          if (fs.existsSync(padoPath)) {
-            let padoContent = fs.readFileSync(padoPath, 'utf-8');
-            
-            // 조건부 렌더링 처리
-            padoContent = processConditionals(padoContent);
+          const relativePath = path.relative(process.cwd(), padoPath);
+          
+          if (relativePath.startsWith('src/app')) {
+            const cachePath = path.join(
+              cacheDir,
+              relativePath.replace(/^src\/app/, 'app').replace(/\.[^.]+$/, '.json')
+            );
 
-            // .ts 파일 자동 로드
+            if (fs.existsSync(cachePath)) {
+              const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+              let content = cache.html;
+
+              // script 태그에 conditions 데이터 추가
+              const conditionsScript = `<script>window.__PADO_CONDITIONS__ = ${JSON.stringify(cache.conditions)};</script>`;
+              
+              const tsPath = padoPath.replace(/\.pado$/, '.ts');
+              if (fs.existsSync(tsPath)) {
+                const relativePath = '/' + path.relative('src', tsPath).replace(/\\/g, '/');
+                content = `${conditionsScript}\n<script type="module" src="${relativePath}"></script>\n${content}`;
+              } else {
+                content = `${conditionsScript}\n${content}`;
+              }
+
+              return content;
+            }
+          }
+
+          if (fs.existsSync(padoPath)) {
+            const padoContent = fs.readFileSync(padoPath, 'utf-8');
+            const transformedContent = transformPadoContent(padoContent, padoPath);
+            createCache(padoPath, transformedContent);
+
+            let finalContent = transformedContent;
             const tsPath = padoPath.replace(/\.pado$/, '.ts');
             if (fs.existsSync(tsPath)) {
               const relativePath = '/' + path.relative('src', tsPath).replace(/\\/g, '/');
-              padoContent = `<script type="module" src="${relativePath}"></script>\n${padoContent}`;
+              finalContent = `<script type="module" src="${relativePath}"></script>\n${finalContent}`;
             }
 
-            return padoContent;
+            return finalContent;
           }
           return '';
-        }
-      );
-
-      // 속성 및 텍스트 노드 변환
-      let processedHtml = html.replace(
-        /(\s)(\w+)=["']?\{([^}]+)\}["']?/g,
-        (match, space, attr, expr) => {
-          if (attr.startsWith('on')) return match;
-          
-          const processedExpr = expr
-            .replace(/\s+/g, ' ')
-            .replace(/\"/g, "'")
-            .trim();
-          
-          return `${space}pado-${attr}="${processedExpr}"`;
-        }
-      );
-
-      return processedHtml.replace(
-        /(<[^>]*>)([^<]+)(<\/[^>]*>)/g,
-        (match, openTag, text, closeTag) => {
-          if (text && text.includes('{') && text.includes('}')) {
-            const escapedText = escapeHtml(text.trim());
-            return `${openTag.replace(/>$/, ` pado-text="${escapedText}">`)}${closeTag}`;
-          }
-          return match;
         }
       );
     }

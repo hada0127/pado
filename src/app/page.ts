@@ -93,7 +93,7 @@ export const readonlyHandler = (element: HTMLInputElement) => {
 
 export const ifHandler = (element: HTMLInputElement) => {
   ifValue = Number(element.value);
-  pado({ ifValue });
+  pado({ ifValue, ifValue2 });
 };
 
 export const if2Handler = (element: HTMLInputElement) => {

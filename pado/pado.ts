@@ -2,8 +2,41 @@ type PadoFunction = {
   (variables: Record<string, unknown>): void;
 }
 
+// 조건부 렌더링을 위한 타입 정의
+type Condition = {
+  groupName: string;
+  blocks: Array<{
+    type: 'if' | 'elseif' | 'else';
+    condition?: string;
+    content: string;
+  }>;
+};
+
+// 캐시된 조건들을 저장할 Map - 타입 수정
+const conditionsMap = new Map<string, Condition>();
+
 const pado = function(variables: Record<string, unknown>): void {
-  
+  // 캐시된 조건들 로드
+  async function loadConditions() {
+    try {
+      const conditions = (window as any).__PADO_CONDITIONS__;
+      console.log('Loading conditions raw:', (window as any).__PADO_CONDITIONS__);
+      console.log('Loading conditions parsed:', conditions);
+      if (conditions) {
+        conditions.forEach((condition: Condition) => {
+          console.log('Setting condition:', condition.groupName, condition);
+          conditionsMap.set(condition.groupName, condition);
+        });
+      }
+      console.log('Final conditionsMap:', {
+        size: conditionsMap.size,
+        keys: Array.from(conditionsMap.keys()),
+        entries: Array.from(conditionsMap.entries())
+      });
+    } catch (error) {
+      console.error('Error loading conditions:', error);
+    }
+  }
 
   // 이벤트 핸들러 처리 함수
   async function processEventHandlers() {
@@ -149,68 +182,99 @@ const pado = function(variables: Record<string, unknown>): void {
     return { value, shouldUpdate: true };
   }
 
-  // 변수명에 해당하는 모든 DOM 요소 업데이트
-  function update() {
-    const argsMap = new Map<string, unknown>(Object.entries(variables));
-    const updatedVars = new Set(argsMap.keys());
+  // 조건부 렌더링 처리
+  function processConditionalRendering(argsMap: Map<string, unknown>, updatedVars: Set<string>) {
+    // 조건 평가 결과를 캐시하는 맵
+    const evaluationCache = new Map<string, string>();
 
-    // 조건부 렌더링 처리
-    const ifGroups = new Set(
-      Array.from(document.querySelectorAll('[pado-if]')).map(el => 
-        el.getAttribute('pado-ifgroup')
-      )
-    );
+    // 재귀적으로 조건부 렌더링 처리
+    function processNode(commentNode: Comment): string | null {
+      const match = commentNode.textContent?.trim().match(/^if:([^>]+)$/);
+      if (!match) return null;
 
-    ifGroups.forEach(groupName => {
-      if (!groupName) return;
-      
-      const groupElements = document.querySelectorAll(`[pado-ifgroup="${groupName}"]`);
-      
-      // 그룹의 조건식에 전달된 변수가 있는지 확인
-      const hasUpdatedVar = Array.from(groupElements).some(element => {
-        const condition = element.getAttribute('pado-if') || element.getAttribute('pado-elseif');
-        if (!condition) return;
-        
-        const vars = getExpressionVars(condition);
-        return vars.some(v => argsMap.has(v));
-      });
+      const groupName = match[1].trim();
+      const condition = conditionsMap.get(groupName);
+      if (!condition) return null;
 
-      // 전달된 변수가 없으면 처리하지 않음
-      if (!hasUpdatedVar) return;
+      // 조건식에 사용된 변수들 수집
+      const allVarsInConditions = condition.blocks
+        .filter(block => block.condition)
+        .map(block => getExpressionVars(block.condition!))
+        .flat();
 
-      let conditionMet = false;
+      const uniqueVars = Array.from(new Set(allVarsInConditions));
+      const hasUpdatedVar = uniqueVars.some(v => updatedVars.has(v));
 
-      // 모든 요소를 먼저 숨김
-      groupElements.forEach(element => {
-        (element as HTMLElement).style.display = 'none';
-      });
+      if (!hasUpdatedVar) {
+        // 캐시된 결과가 있으면 사용
+        const cachedContent = evaluationCache.get(groupName);
+        if (cachedContent) return cachedContent;
+        return null;
+      }
 
-      // if와 elseif 조건 검사
-      for (const element of groupElements) {
-        const ifCondition = element.getAttribute('pado-if');
-        const elseifCondition = element.getAttribute('pado-elseif');
-        
-        if (ifCondition || elseifCondition) {
-          const condition = ifCondition || elseifCondition;
-          if (!condition) continue;
-          
-          const value = evaluateExpression(condition, argsMap);
-          if (value) {
-            (element as HTMLElement).style.display = 'inline';
-            conditionMet = true;
+      let content = '';
+      let matched = false;
+
+      // 조건 평가
+      for (const block of condition.blocks) {
+        if (block.type === 'if' || block.type === 'elseif') {
+          const result = evaluateExpression(block.condition!, argsMap);
+          if (result) {
+            content = block.content;
+            matched = true;
             break;
           }
         }
       }
 
-      // else 처리
-      if (!conditionMet) {
-        const elseElement = Array.from(groupElements).find(el => el.hasAttribute('pado-else'));
-        if (elseElement) {
-          (elseElement as HTMLElement).style.display = 'inline';
+      if (!matched) {
+        const elseBlock = condition.blocks.find(block => block.type === 'else');
+        if (elseBlock) {
+          content = elseBlock.content;
         }
       }
-    });
+
+      // 결과 캐시
+      evaluationCache.set(groupName, content);
+      return content;
+    }
+
+    // DOM 순회하면서 조건부 렌더링 처리
+    const walker = document.createTreeWalker(
+      document.body,
+      NodeFilter.SHOW_COMMENT,
+      null
+    );
+
+    const nodesToProcess: { node: Comment; content: string }[] = [];
+    let node;
+
+    while ((node = walker.nextNode())) {
+      const commentNode = node as Comment;
+      const content = processNode(commentNode);
+      
+      if (content !== null) {
+        // 기존 내용 제거
+        while (commentNode.nextSibling && !(commentNode.nextSibling instanceof Comment)) {
+          commentNode.nextSibling.remove();
+        }
+
+        // 새 내용 삽입
+        if (content) {
+          const template = document.createElement('template');
+          template.innerHTML = content.trim();
+          commentNode.after(template.content);
+        }
+      }
+    }
+  }
+
+  function update() {
+    const argsMap = new Map<string, unknown>(Object.entries(variables));
+    const updatedVars = new Set(argsMap.keys());
+
+    // 조건부 렌더링 처리
+    processConditionalRendering(argsMap, updatedVars);
 
     // pado-text 처리
     let elements = document.querySelectorAll('[pado-text]');
@@ -309,18 +373,16 @@ const pado = function(variables: Record<string, unknown>): void {
     });
   }
 
-  // 최초 실행시에만 템플릿을 변환
+  // 최초 실행시에만 템플릿을 변환하고 조건들을 로드
   if (!document.querySelector('[pado-init]')) {
-    processEventHandlers();
-    document.body.setAttribute('pado-init', '');
+    loadConditions().then(() => {
+      processEventHandlers();
+      document.body.setAttribute('pado-init', '');
+      update();
+    });
+  } else {
+    update();
   }
-
-  // DOM 업데이트 실행
-  update();
-
-
 } as PadoFunction;
-
-
 
 export default pado; 

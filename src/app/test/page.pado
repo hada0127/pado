@@ -124,15 +124,6 @@ onchange={rangeHandler(this)} />
   <p>Expression: &lbrace;ifValue2 === 'a'&rbrace; = {ifValue2 === 'a'}</p>
   {@if(ifValue === 1)}
   <h3>ifValue is 1 Visible: {ifValue}</h3>
-  <div>2Depth @ifValue2: {ifValue2}
-    {@if(ifValue2 === 'a')}
-    <p>ifValue2 is a</p>
-    {@elseif(ifValue2 === 'b')}
-    <p>ifValue2 is b</p>
-    {@else}
-    <p>ifValue2 is not a, b</p>
-    {/if}
-  </div>
   {@elseif(ifValue === 2)}
   <h3>ifValue is 2 Visible: {ifValue}</h3>
   {@elseif(ifValue === 3)}

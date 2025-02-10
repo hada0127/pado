@@ -23,8 +23,9 @@
 - ✅ 평가식 구현
 - ✅ `&lbrace;` 적용 제외
 - 반복문 구현 - 배열의 요소가 변경되면 변경된 요소를 인식하여 변경
-- if문 구현 - 조건이 변경되면 변경된 조건을 인식하여 변경
+- ✅ if문 구현 - 조건이 변경되면 변경된 조건을 인식하여 변경
 - ✅ 가능하면 vitePlugin으로 컴파일하여 미리 최적화
+- ✅ vitePlugin으로 pado파일을 변경 시 마다 캐싱하고 캐싱된 데이터를 서빙
 
 ### 2차 (0.2.0)
 - ✅ index.html와 app/page.pado 분리, index.ts 제거하고 page.ts 파일로 변경
@@ -51,6 +52,10 @@
 - 컴포넌트의 Server Side Rendering 구현 (component.server.pado)
 
 ## 구현 현황
+### 2025-02-11
+- if문 구현 - 조건이 변경되면 변경된 조건을 인식하여 변경
+- vitePlugin으로 pado파일을 변경 시 마다 캐싱하고 캐싱된 데이터를 서빙
+
 ### 2025-02-07
 - `&lbrace;` 적용 제외
 - index.html와 app/page.pado 분리, index.ts 제거하고 page.ts 파일로 변경
