@@ -109,7 +109,7 @@ export const if2Handler = (element: HTMLInputElement) => {
 export const loopHandler = () => {
   // add item
   loopValue.push(loopValue.length + 1);
-  pado({ loopValue });
+  pado({ loopValue, ifValue2 });
 };
 
 export const loop2Handler = () => {

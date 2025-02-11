@@ -171,9 +171,6 @@ const pado = function(variables: Record<string, unknown>): void {
     }
   }
 
-
-
-
   // 평가식 처리를 위한 공통 함수
   function processExpression(expression: string | null, argsMap: Map<string, unknown>, updatedVars: Set<string>): {
     value: unknown;
@@ -205,18 +202,26 @@ const pado = function(variables: Record<string, unknown>): void {
   }
 
   // 조건부 렌더링 처리
-  function processConditionalRendering(argsMap: Map<string, unknown>, updatedVars: Set<string>) {
+  function processConditionalRendering(argsMap: Map<string, unknown>, updatedVars: Set<string>, root: ParentNode = document.body) {
     // 조건 평가 결과를 캐시하는 맵
     const evaluationCache = new Map<string, string>();
 
-    // 재귀적으로 조건부 렌더링 처리
-    function processNode(commentNode: Comment): string | null {
+    // DOM 순회하면서 조건부 렌더링 처리
+    const walker = document.createTreeWalker(
+      root,
+      NodeFilter.SHOW_COMMENT,
+      null
+    );
+
+    let node;
+    while ((node = walker.nextNode())) {
+      const commentNode = node as Comment;
       const match = commentNode.textContent?.trim().match(/^if:([^>]+)$/);
-      if (!match) return null;
+      if (!match) continue;
 
       const groupName = match[1].trim();
       const condition = conditionsMap.get(groupName);
-      if (!condition) return null;
+      if (!condition) continue;
 
       // 조건식에 사용된 변수들 수집
       const allVarsInConditions = condition.blocks
@@ -227,12 +232,7 @@ const pado = function(variables: Record<string, unknown>): void {
       const uniqueVars = Array.from(new Set(allVarsInConditions));
       const hasUpdatedVar = uniqueVars.some(v => updatedVars.has(v));
 
-      if (!hasUpdatedVar) {
-        // 캐시된 결과가 있으면 사용
-        const cachedContent = evaluationCache.get(groupName);
-        if (cachedContent) return cachedContent;
-        return null;
-      }
+      if (!hasUpdatedVar) continue;
 
       let content = '';
       let matched = false;
@@ -256,37 +256,16 @@ const pado = function(variables: Record<string, unknown>): void {
         }
       }
 
-      // 결과 캐시
-      evaluationCache.set(groupName, content);
-      return content;
-    }
+      // 기존 내용 제거
+      while (commentNode.nextSibling && !(commentNode.nextSibling instanceof Comment)) {
+        commentNode.nextSibling.remove();
+      }
 
-    // DOM 순회하면서 조건부 렌더링 처리
-    const walker = document.createTreeWalker(
-      document.body,
-      NodeFilter.SHOW_COMMENT,
-      null
-    );
-
-    
-    let node;
-
-    while ((node = walker.nextNode())) {
-      const commentNode = node as Comment;
-      const content = processNode(commentNode);
-      
-      if (content !== null) {
-        // 기존 내용 제거
-        while (commentNode.nextSibling && !(commentNode.nextSibling instanceof Comment)) {
-          commentNode.nextSibling.remove();
-        }
-
-        // 새 내용 삽입
-        if (content) {
-          const template = document.createElement('template');
-          template.innerHTML = content.trim();
-          commentNode.after(template.content);
-        }
+      // 새 내용 삽입
+      if (content) {
+        const template = document.createElement('template');
+        template.innerHTML = content.trim();
+        commentNode.after(template.content);
       }
     }
   }
@@ -329,6 +308,8 @@ const pado = function(variables: Record<string, unknown>): void {
         const template = document.createElement('template');
         const itemMap = new Map(argsMap);
         itemMap.set('index', index);
+        itemMap.set(loop.arrayExpr, array);
+        itemMap.set(`${loop.arrayExpr}[${index}]`, item);
 
         let content = loop.content;
         
@@ -337,17 +318,47 @@ const pado = function(variables: Record<string, unknown>): void {
           new RegExp(`{${loop.itemName}(\\.\\w+)?}`, 'g'),
           (match) => {
             if (match.includes('.')) {
-              // item.name -> loopValue2[index].name 형태로 변환
               return match.replace(`${loop.itemName}.`, `${loop.arrayExpr}[${index}].`);
             }
-            // item -> loopValue2[index] 형태로 변환
             return `{${loop.arrayExpr}[${index}]}`;
           }
         );
 
-        // pado- 속성 처리
+        // 중첩된 if 처리를 위한 임시 div
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = content;
+
+        // 중첩된 if 처리
+        const walker = document.createTreeWalker(
+          tempDiv,
+          NodeFilter.SHOW_COMMENT,
+          null
+        );
+
+        let ifNode;
+        while ((ifNode = walker.nextNode())) {
+          const ifCommentNode = ifNode as Comment;
+          const ifMatch = ifCommentNode.textContent?.trim().match(/^if:([^>]+)$/);
+          if (ifMatch) {
+            const groupName = ifMatch[1].trim();
+            const condition = conditionsMap.get(groupName);
+            if (condition) {
+              // 모든 변수를 업데이트 대상으로 처리
+              const allVars = new Set([
+                ...updatedVars,
+                ...Array.from(itemMap.keys()),
+                ...condition.blocks
+                  .filter(block => block.condition)
+                  .flatMap(block => getExpressionVars(block.condition!))
+              ]);
+              
+              // 중첩된 if 처리
+              processConditionalRendering(itemMap, allVars, tempDiv);
+            }
+          }
+        }
+
+        // pado- 속성 처리
         const elements = tempDiv.querySelectorAll('*');
         elements.forEach(element => {
           Array.from(element.attributes)
