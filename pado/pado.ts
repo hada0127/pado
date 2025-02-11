@@ -328,17 +328,21 @@ const pado = function(variables: Record<string, unknown>): void {
       array.forEach((item, index) => {
         const template = document.createElement('template');
         const itemMap = new Map(argsMap);
-        
-        // 배열 전체와 현재 item 모두 저장
-        itemMap.set(loop.itemName, array);  // 전체 배열 저장
-        itemMap.set(`${loop.arrayExpr}[${index}]`, item);  // 현재 item을 배열 형태로 저장
         itemMap.set('index', index);
 
         let content = loop.content;
-        // itemName을 배열 표현식으로 변경
+        
+        // itemName을 배열 인덱스 형태로 변환
         content = content.replace(
-          new RegExp(`{${loop.itemName}}(?!\\[)`, 'g'),
-          `{${loop.arrayExpr}[${index}]}`
+          new RegExp(`{${loop.itemName}(\\.\\w+)?}`, 'g'),
+          (match) => {
+            if (match.includes('.')) {
+              // item.name -> loopValue2[index].name 형태로 변환
+              return match.replace(`${loop.itemName}.`, `${loop.arrayExpr}[${index}].`);
+            }
+            // item -> loopValue2[index] 형태로 변환
+            return `{${loop.arrayExpr}[${index}]}`;
+          }
         );
 
         // pado- 속성 처리
@@ -350,10 +354,14 @@ const pado = function(variables: Record<string, unknown>): void {
             .filter(attr => attr.name.startsWith('pado-'))
             .forEach(attr => {
               const originalAttrName = attr.name.replace('pado-', '');
-              // itemName을 배열 표현식으로 변경
               const expr = attr.value.replace(
-                new RegExp(`${loop.itemName}(?!\\[)(?=}|\\.)`, 'g'),
-                `${loop.arrayExpr}[${index}]`
+                new RegExp(`${loop.itemName}(\\.\\w+)?(?=}|\\s)`, 'g'),
+                (match) => {
+                  if (match.includes('.')) {
+                    return match.replace(`${loop.itemName}.`, `${loop.arrayExpr}[${index}].`);
+                  }
+                  return `${loop.arrayExpr}[${index}]`;
+                }
               );
               const value = evaluateExpression(expr, itemMap);
 

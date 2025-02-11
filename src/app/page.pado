@@ -149,4 +149,10 @@ onchange={rangeHandler(this)} />
   <li>{item}</li>
   {/loop}
 </ul>
-  <p>{loopValue[0]}</p>
+<p>loopValue2: {JSON.stringify(loopValue2)}</p>
+<button onclick={loop2Handler()}>add item</button>
+<ul>
+  {@loop loopValue2 as item}
+  <li>{item.name} / {item.age}</li>
+  {/loop}
+</ul>
