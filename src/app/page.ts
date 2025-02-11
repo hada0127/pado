@@ -15,9 +15,10 @@ let disabledValue: boolean = false;
 let readonlyValue: boolean = false;
 let ifValue: number = 1;
 let ifValue2: string = 'a';
+let loopValue: number[] = [1, 2, 3];
 
 // 초기 렌더링
-pado({ counterValue, textValue, numberValue, dateValue, timeValue, datetimeLocalValue, rangeValue, textareaValue, selectValue, checkboxValue, radioValue, disabledValue, readonlyValue, ifValue, ifValue2 });
+pado({ counterValue, textValue, numberValue, dateValue, timeValue, datetimeLocalValue, rangeValue, textareaValue, selectValue, checkboxValue, radioValue, disabledValue, readonlyValue, ifValue, ifValue2, loopValue });
 
 // 핸들러 정의
 
@@ -99,4 +100,10 @@ export const ifHandler = (element: HTMLInputElement) => {
 export const if2Handler = (element: HTMLInputElement) => {
   ifValue2 = element.value;
   pado({ ifValue2 });
+};
+
+export const loopHandler = () => {
+  // add item
+  loopValue.push(loopValue.length + 1);
+  pado({ loopValue });
 };

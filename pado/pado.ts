@@ -15,26 +15,38 @@ type Condition = {
 // 캐시된 조건들을 저장할 Map - 타입 수정
 const conditionsMap = new Map<string, Condition>();
 
+// 타입 정의 추가
+type Loop = {
+  name: string;
+  arrayExpr: string;
+  itemName: string;
+  content: string;
+};
+
+// 캐시된 loops를 저장할 Map
+const loopsMap = new Map<string, Loop>();
+
 const pado = function(variables: Record<string, unknown>): void {
   // 캐시된 조건들 로드
   async function loadConditions() {
     try {
       const conditions = (window as any).__PADO_CONDITIONS__;
-      console.log('Loading conditions raw:', (window as any).__PADO_CONDITIONS__);
-      console.log('Loading conditions parsed:', conditions);
+      const loops = (window as any).__PADO_LOOPS__;
+      
       if (conditions) {
         conditions.forEach((condition: Condition) => {
-          console.log('Setting condition:', condition.groupName, condition);
           conditionsMap.set(condition.groupName, condition);
         });
       }
-      console.log('Final conditionsMap:', {
-        size: conditionsMap.size,
-        keys: Array.from(conditionsMap.keys()),
-        entries: Array.from(conditionsMap.entries())
-      });
+      
+      if (loops) {
+        loops.forEach((loop: Loop) => {
+          loopsMap.set(loop.name, loop);
+        });
+      }
+      
     } catch (error) {
-      console.error('Error loading conditions:', error);
+      console.error('Error loading conditions and loops:', error);
     }
   }
 
@@ -107,49 +119,60 @@ const pado = function(variables: Record<string, unknown>): void {
     );
   }
 
-  function evaluateExpression(expression: string, variables: Map<string, unknown>): unknown {
-    // 변수들을 객체로 변환
-    const context: Record<string, unknown> = {};
-    
-    // 평가식에서 사용된 변수들만 추출
-    const usedVars = getExpressionVars(expression);
-    
-    // 평가식에 사용된 변수가 모두 있는지 확인
-    const hasAllVars = usedVars.every(v => variables.has(v));
-    if (!hasAllVars) {
-      return undefined;
-    }
-
-    // 실제 사용된 변수만 context에 추가
-    usedVars.forEach(varName => {
-      context[varName] = variables.get(varName);
-    });
-
+  function evaluateExpression(expression: string, argsMap: Map<string, unknown>): unknown {
     try {
-      // 표현식 정리 및 문자열 처리
-      const processedExpr = expression
-        .replace(/\s+/g, ' ')  // 연속된 공백을 하나로
-        .replace(/(['"])((?:\\\1|.)*?)\1/g, match => {  // 문자열 리터럴 처리
-          return match.startsWith("'") ? `"${match.slice(1, -1)}"` : match;
-        })
-        .trim();
+      const vars: Record<string, unknown> = {};
 
-        // 표현식이 비어있거나 불완전한 경우 처리
-        if (!processedExpr || processedExpr.endsWith('===') || processedExpr.endsWith('==') || 
-            processedExpr.endsWith('!==') || processedExpr.endsWith('!=')) {
-          return undefined;
+      // 변수들을 객체에 복사
+      for (const [key, value] of argsMap.entries()) {
+        vars[key] = value;
+      }
+
+      // 배열 접근 표현식 처리
+      const arrayPattern = /(\w+)\[(\d+)\]/g;
+      const processedExpr = expression.replace(arrayPattern, (_, name, index) => {
+        const array = vars[name];
+        if (Array.isArray(array)) {
+          const tempVarName = `__temp_${name}_${index}`;
+          vars[tempVarName] = array[Number(index)];
+          return tempVarName;
         }
+        return '';
+      });
 
-        const keys = Object.keys(context);
-        const values = Object.values(context);
-        const fn = new Function(...keys, `return ${processedExpr};`);
-        const result = fn(...values);
-        return result;
+      // 매개변수와 표현식 안전하게 처리
+      const keys = Object.keys(vars).filter((key) => /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key));
+      const values = keys.map((key) => vars[key]);
+
+      // 표현식 정리 및 문자열 리터럴 처리
+      const cleanExpr = processedExpr
+        .trim()
+        .replace(/[\n\r]/g, '')
+        // 문자열 리터럴 처리 (작은따옴표와 큰따옴표 모두 처리)
+        .replace(/'([^']*)'|"([^"]*)"/g, (match) => {
+          if (match.startsWith("'") || match.startsWith('"')) {
+            return JSON.stringify(match.slice(1, -1));
+          }
+          return match;
+        })
+        // 중괄호 표현식 처리
+        .replace(/\{([^}]+)\}/g, '$1');
+
+      // 함수 생성 및 실행
+      const functionBody = `try { return ${cleanExpr}; } catch(e) { return undefined; }`;
+
+      // 안전한 함수 생성
+      const func = new Function(...keys, functionBody);
+
+      return func(...values);
     } catch (error) {
       console.error('Error evaluating expression:', expression, error);
       return undefined;
     }
   }
+
+
+
 
   // 평가식 처리를 위한 공통 함수
   function processExpression(expression: string | null, argsMap: Map<string, unknown>, updatedVars: Set<string>): {
@@ -164,7 +187,6 @@ const pado = function(variables: Record<string, unknown>): void {
     if (expr.startsWith('{') && expr.endsWith('}')) {
       expr = expr.slice(1, -1);
     }
-    
 
     // 평가식에서 사용된 변수들 추출
     const usedVars = getExpressionVars(expr);
@@ -246,7 +268,7 @@ const pado = function(variables: Record<string, unknown>): void {
       null
     );
 
-    const nodesToProcess: { node: Comment; content: string }[] = [];
+    
     let node;
 
     while ((node = walker.nextNode())) {
@@ -269,12 +291,114 @@ const pado = function(variables: Record<string, unknown>): void {
     }
   }
 
+  // processLoopRendering 함수 수정
+  function processLoopRendering(argsMap: Map<string, unknown>, updatedVars: Set<string>) {
+    const walker = document.createTreeWalker(
+      document.body,
+      NodeFilter.SHOW_COMMENT,
+      null
+    );
+
+    let node;
+    while ((node = walker.nextNode())) {
+      const commentNode = node as Comment;
+      const match = commentNode.textContent?.trim().match(/^loop:([^>]+)$/);
+      if (!match) continue;
+
+      const name = match[1].trim();
+      const loop = loopsMap.get(name);
+      if (!loop) continue;
+
+      // 배열 표현식에 사용된 변수 확인
+      const arrayVars = getExpressionVars(loop.arrayExpr);
+      const hasUpdatedVar = arrayVars.some(v => updatedVars.has(v));
+      if (!hasUpdatedVar) continue;
+
+      // 배열 평가
+      const array = evaluateExpression(loop.arrayExpr, argsMap) as unknown[];
+      if (!Array.isArray(array)) continue;
+
+      // 기존 내용 제거
+      while (commentNode.nextSibling && !(commentNode.nextSibling instanceof Comment)) {
+        commentNode.nextSibling.remove();
+      }
+
+      // 새 내용 생성
+      const fragment = document.createDocumentFragment();
+      array.forEach((item, index) => {
+        const template = document.createElement('template');
+        const itemMap = new Map(argsMap);
+        
+        // 배열 전체와 현재 item 모두 저장
+        itemMap.set(loop.itemName, array);  // 전체 배열 저장
+        itemMap.set(`${loop.arrayExpr}[${index}]`, item);  // 현재 item을 배열 형태로 저장
+        itemMap.set('index', index);
+
+        let content = loop.content;
+        // itemName을 배열 표현식으로 변경
+        content = content.replace(
+          new RegExp(`{${loop.itemName}}(?!\\[)`, 'g'),
+          `{${loop.arrayExpr}[${index}]}`
+        );
+
+        // pado- 속성 처리
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = content;
+        const elements = tempDiv.querySelectorAll('*');
+        elements.forEach(element => {
+          Array.from(element.attributes)
+            .filter(attr => attr.name.startsWith('pado-'))
+            .forEach(attr => {
+              const originalAttrName = attr.name.replace('pado-', '');
+              // itemName을 배열 표현식으로 변경
+              const expr = attr.value.replace(
+                new RegExp(`${loop.itemName}(?!\\[)(?=}|\\.)`, 'g'),
+                `${loop.arrayExpr}[${index}]`
+              );
+              const value = evaluateExpression(expr, itemMap);
+
+              // boolean 속성 처리
+              if (['checked', 'disabled', 'readonly'].includes(originalAttrName)) {
+                const boolValue = Boolean(value);
+                if (boolValue) {
+                  element.setAttribute(originalAttrName, '');
+                } else {
+                  element.removeAttribute(originalAttrName);
+                }
+              }
+              // value 속성 처리
+              else if (originalAttrName === 'value') {
+                element.setAttribute(originalAttrName, String(value));
+              }
+              // text 속성 처리
+              else if (originalAttrName === 'text') {
+                element.textContent = String(value);
+              }
+              // 기타 속성 처리
+              else {
+                element.setAttribute(originalAttrName, String(value));
+              }
+            });
+        });
+
+        content = tempDiv.innerHTML;
+        template.innerHTML = content;
+        fragment.appendChild(template.content);
+      });
+
+      commentNode.after(fragment);
+    }
+  }
+
   function update() {
     const argsMap = new Map<string, unknown>(Object.entries(variables));
     const updatedVars = new Set(argsMap.keys());
 
     // 조건부 렌더링 처리
     processConditionalRendering(argsMap, updatedVars);
+
+    // 반복문 처리
+    processLoopRendering(argsMap, updatedVars);
 
     // pado-text 처리
     let elements = document.querySelectorAll('[pado-text]');

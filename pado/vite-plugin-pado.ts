@@ -167,6 +167,60 @@ function processConditionals(html: string, filePath: string): {
   return processNestedConditionals(html, fileId, { value: 0 });
 }
 
+// 타입 정의 추가
+type Loop = {
+  name: string;
+  arrayExpr: string;
+  itemName: string;
+  content: string;
+};
+
+function processLoops(content: string, fileId: string, counter: { value: number }): {
+  html: string;
+  loops: Array<Loop>;
+} {
+  const loops: Array<Loop> = [];
+  let result = content;
+  let startIndex = 0;
+
+  while (startIndex < result.length) {
+    const loopStart = result.indexOf('{@loop ', startIndex);
+    if (loopStart === -1) break;
+
+    // loop 끝 위치 찾기
+    const loopEnd = result.indexOf('{/loop}', loopStart);
+    if (loopEnd === -1) break;
+
+    // loop 구문 파싱
+    const fullMatch = result.slice(loopStart, loopEnd + 7);
+    const loopMatch = fullMatch.match(/{@loop\s+([^}\s]+)\s+as\s+([^}\s]+)}/);
+    
+    if (loopMatch) {
+      const [, arrayExpr, itemName] = loopMatch;
+      const innerContent = fullMatch.slice(loopMatch[0].length, -7).trim();
+
+      // 내부 컨텐츠 처리
+      const processedContent = transformContent(innerContent);
+
+      // if와 동일한 패턴으로 이름 생성 (상대 경로 사용)
+      const name = `${fileId.replace(/^.*?src\/app\//, '').split('.')[0]}_loop_${counter.value++}`;
+      loops.push({
+        name,
+        arrayExpr,
+        itemName,
+        content: processedContent
+      });
+
+      // loop 블록을 주석으로 대체
+      result = result.slice(0, loopStart) + `<!-- loop:${name} -->` + result.slice(loopEnd + 7);
+    }
+
+    startIndex = loopStart + 1;
+  }
+
+  return { html: result, loops };
+}
+
 export default function padoPlugin(): Plugin {
   // 캐시 디렉토리 생성
   const cacheDir = path.resolve('pado/cache');
@@ -179,12 +233,16 @@ export default function padoPlugin(): Plugin {
     // 1. 조건부 렌더링 처리
     const { html: processedContent, conditions } = processConditionals(content, filePath);
 
-    // 2. 전체 컨텐츠 변환
-    const transformedHtml = transformContent(processedContent);
+    // 2. 반복문 처리
+    const { html: processedWithLoops, loops } = processLoops(processedContent, filePath, { value: conditions.length });
+
+    // 3. 전체 컨텐츠 변환
+    const transformedHtml = transformContent(processedWithLoops);
 
     return JSON.stringify({
       html: transformedHtml,
       conditions,
+      loops,
       timestamp: Date.now()
     }, null, 2);
   }
@@ -243,8 +301,11 @@ export default function padoPlugin(): Plugin {
               const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
               let content = cache.html;
 
-              // script 태그에 conditions 데이터 추가
-              const conditionsScript = `<script>window.__PADO_CONDITIONS__ = ${JSON.stringify(cache.conditions)};</script>`;
+              // script 태그에 conditions와 loops 데이터 추가
+              const conditionsScript = `<script>
+window.__PADO_CONDITIONS__ = ${JSON.stringify(cache.conditions)};
+window.__PADO_LOOPS__ = ${JSON.stringify(cache.loops)};
+</script>`;
               
               const tsPath = padoPath.replace(/\.pado$/, '.ts');
               if (fs.existsSync(tsPath)) {

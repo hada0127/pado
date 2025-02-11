@@ -142,8 +142,11 @@ onchange={rangeHandler(this)} />
   {/if}
 </div>
 <h2>Loop</h2>
-<!-- <ul>
-  {@loop d as item}
+<p>loopValue: {loopValue}</p>
+<button onclick={loopHandler()}>add item</button>
+<ul>
+  {@loop loopValue as item}
   <li>{item}</li>
   {/loop}
-</ul> -->
+</ul>
+  <p>{loopValue[0]}</p>
