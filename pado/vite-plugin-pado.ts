@@ -433,6 +433,16 @@ async function handleRelatedFiles(filePath: string) {
   }
 }
 
+async function replaceAsync(str: string, regex: RegExp, asyncFn: (match: string, ...args: any[]) => Promise<string>) {
+  const promises: Promise<string>[] = [];
+  str.replace(regex, (match, ...args) => {
+    promises.push(asyncFn(match, ...args));
+    return match;
+  });
+  const data = await Promise.all(promises);
+  return str.replace(regex, () => data.shift() || '');
+}
+
 export default function padoPlugin(): Plugin {
   // 캐시 디렉토리 생성
   if (!fs.existsSync(cacheDir)) {
@@ -481,10 +491,11 @@ export default function padoPlugin(): Plugin {
         return [];
       }
     },
-    transformIndexHtml(html: string, { filename }) {
-      return html.replace(
+    async transformIndexHtml(html: string, { filename }) {
+      return replaceAsync(
+        html,
         /<!--\s*@pado\s+src="([^"]+)"\s*-->/g,
-        (_, src) => {
+        async (_, src) => {
           const padoPath = path.resolve(path.dirname(filename), src);
           const relativePath = path.relative(process.cwd(), padoPath);
           
@@ -493,6 +504,9 @@ export default function padoPlugin(): Plugin {
               cacheDir,
               relativePath.replace(/^src\/app/, 'app').replace(/\.[^.]+$/, '.json')
             );
+            if (!fs.existsSync(cachePath)) {
+              await handleRelatedFiles(padoPath);
+            }
 
             if (fs.existsSync(cachePath)) {
               const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
