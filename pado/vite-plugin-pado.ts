@@ -232,6 +232,169 @@ async function handleTsCache(filePath: string, code: string) {
   }
 }
 
+// 캐시 파일 생성/삭제 함수
+function handleCache(filePath: string, content?: string) {
+  const relativePath = path.relative(process.cwd(), filePath);
+  if (relativePath.startsWith('src/app')) {
+    const cachePath = path.join(
+      cacheDir,
+      relativePath.replace(/^src\/app/, 'app').replace(/\.[^.]+$/, '.json')
+    );
+
+    // 파일이 삭제된 경우
+    if (!content) {
+      if (fs.existsSync(cachePath)) {
+        fs.unlinkSync(cachePath);
+        const cacheDir = path.dirname(cachePath);
+        if (fs.readdirSync(cacheDir).length === 0) {
+          fs.rmdirSync(cacheDir);
+        }
+      }
+      return null;
+    }
+
+    // 파일이 생성/수정된 경우
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    fs.writeFileSync(cachePath, content);
+    return cachePath;
+  }
+  return null;
+}
+
+// transformPadoContent 함수를 여기로 이동
+function transformPadoContent(content: string, padoPath: string): string {
+  const cache = {
+    html: '',
+    conditions: [] as any[],
+    loops: [] as any[],
+    timestamp: Date.now()
+  };
+
+  // 중첩된 구조를 재귀적으로 처리하는 함수
+  function processContent(content: string): string {
+    let processedContent = content;
+
+    // 가장 바깥쪽 if/loop를 찾아서 처리
+    function findOutermostMatch(str: string, start: number, type: 'if' | 'loop'): { start: number; end: number } | null {
+      const startTag = type === 'if' ? '{@if' : '{@loop';
+      const endTag = type === 'if' ? '{/if}' : '{/loop}';
+      
+      const tagStart = str.indexOf(startTag, start);
+      if (tagStart === -1) return null;
+
+      let depth = 1;
+      let pos = tagStart + startTag.length;
+      
+      while (depth > 0 && pos < str.length) {
+        if (str.startsWith(startTag, pos)) {
+          depth++;
+          pos += startTag.length;
+        } else if (str.startsWith(endTag, pos)) {
+          depth--;
+          if (depth === 0) {
+            return { start: tagStart, end: pos + endTag.length };
+          }
+          pos += endTag.length;
+        } else {
+          pos++;
+        }
+      }
+      return null;
+    }
+
+    // if 구문 처리
+    let currentPos = 0;
+    while (true) {
+      const match = findOutermostMatch(processedContent, currentPos, 'if');
+      if (!match) break;
+
+      const { start: ifStart, end: ifEnd } = match;
+      const fullMatch = processedContent.substring(ifStart, ifEnd);
+      const ifId = `page_if_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+      const blocks: Array<{
+        type: 'if' | 'elseif' | 'else';
+        condition?: string;
+        content: string;
+      }> = [];
+
+      // 내부 중첩 구조 먼저 처리
+      const innerContent = processContent(fullMatch.substring(fullMatch.indexOf('}') + 1, fullMatch.lastIndexOf('{/if}')));
+      
+      // if/elseif/else 블록 처리
+      const parts = innerContent.split(/(?={@elseif)|(?={@else})/);
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (i === 0) {
+          // if 블록
+          const match = fullMatch.match(/\{@if\s*\(\s*(.*?)\s*\)}/);
+          if (match) {
+            blocks.push({
+              type: 'if',
+              condition: match[1].trim(),
+              content: transformContent(part).trim()
+            });
+          }
+        } else if (part.startsWith('{@elseif')) {
+          // elseif 블록
+          const match = part.match(/\{@elseif\s*\(\s*(.*?)\s*\)}([\s\S]*)/);
+          if (match) {
+            blocks.push({
+              type: 'elseif',
+              condition: match[1].trim(),
+              content: transformContent(match[2]).trim()
+            });
+          }
+        } else if (part.startsWith('{@else}')) {
+          // else 블록
+          blocks.push({
+            type: 'else',
+            content: transformContent(part.substring(7)).trim()
+          });
+        }
+      }
+
+      cache.conditions.push({ groupName: ifId, blocks });
+      processedContent = processedContent.substring(0, ifStart) + `<!-- if:${ifId} -->` + processedContent.substring(ifEnd);
+      currentPos = ifStart + 1;
+    }
+
+    // loop 구문도 동일한 방식으로 처리
+    currentPos = 0;
+    while (true) {
+      const match = findOutermostMatch(processedContent, currentPos, 'loop');
+      if (!match) break;
+
+      const { start: loopStart, end: loopEnd } = match;
+      const fullMatch = processedContent.substring(loopStart, loopEnd);
+      const loopMatch = fullMatch.match(/{@loop\s+(\w+)\s+as\s+(\w+)}/);
+      
+      if (loopMatch) {
+        const [, arrayExpr, itemName] = loopMatch;
+        const loopId = `page_loop_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+        
+        // 내부 중첩 구조 처리
+        const innerContent = processContent(fullMatch.substring(fullMatch.indexOf('}') + 1, fullMatch.lastIndexOf('{/loop}')));
+        
+        cache.loops.push({
+          name: loopId,
+          arrayExpr,
+          itemName,
+          content: transformContent(innerContent).trim()
+        });
+
+        processedContent = processedContent.substring(0, loopStart) + `<!-- loop:${loopId} -->` + processedContent.substring(loopEnd);
+      }
+      currentPos = loopStart + 1;
+    }
+
+    return processedContent;
+  }
+
+  // 전체 내용 처리
+  cache.html = transformContent(processContent(content));
+  return JSON.stringify(cache, null, 2);
+}
+
 // 연관 파일 처리 함수
 async function handleRelatedFiles(filePath: string) {
   const basePath = filePath.replace(/\.(pado|ts|module\.scss)$/, '');
@@ -274,175 +437,6 @@ export default function padoPlugin(): Plugin {
   // 캐시 디렉토리 생성
   if (!fs.existsSync(cacheDir)) {
     fs.mkdirSync(cacheDir, { recursive: true });
-  }
-
-  // pado 파일 전체 변환 처리
-  function transformPadoContent(content: string, padoPath: string): string {
-    const cache = {
-      html: '',
-      conditions: [] as any[],
-      loops: [] as any[]
-    };
-
-    // 중첩된 구조를 재귀적으로 처리하는 함수
-    function processContent(content: string): string {
-      let processedContent = content;
-
-      // 가장 바깥쪽 if/loop를 찾아서 처리
-      function findOutermostMatch(str: string, start: number, type: 'if' | 'loop'): { start: number; end: number } | null {
-        const startTag = type === 'if' ? '{@if' : '{@loop';
-        const endTag = type === 'if' ? '{/if}' : '{/loop}';
-        
-        const tagStart = str.indexOf(startTag, start);
-        if (tagStart === -1) return null;
-
-        let depth = 1;
-        let pos = tagStart + startTag.length;
-        
-        while (depth > 0 && pos < str.length) {
-          if (str.startsWith(startTag, pos)) {
-            depth++;
-            pos += startTag.length;
-          } else if (str.startsWith(endTag, pos)) {
-            depth--;
-            if (depth === 0) {
-              return { start: tagStart, end: pos + endTag.length };
-            }
-            pos += endTag.length;
-          } else {
-            pos++;
-          }
-        }
-        return null;
-      }
-
-      // if 구문 처리
-      let currentPos = 0;
-      while (true) {
-        const match = findOutermostMatch(processedContent, currentPos, 'if');
-        if (!match) break;
-
-        const { start: ifStart, end: ifEnd } = match;
-        const fullMatch = processedContent.substring(ifStart, ifEnd);
-        const ifId = `page_if_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-        const blocks: Array<{
-          type: 'if' | 'elseif' | 'else';
-          condition?: string;
-          content: string;
-        }> = [];
-
-        // 내부 중첩 구조 먼저 처리
-        const innerContent = processContent(fullMatch.substring(fullMatch.indexOf('}') + 1, fullMatch.lastIndexOf('{/if}')));
-        
-        // if/elseif/else 블록 처리
-        const parts = innerContent.split(/(?={@elseif)|(?={@else})/);
-        for (let i = 0; i < parts.length; i++) {
-          const part = parts[i];
-          if (i === 0) {
-            // if 블록
-            const match = fullMatch.match(/\{@if\s*\(\s*(.*?)\s*\)}/);
-            if (match) {
-              blocks.push({
-                type: 'if',
-                condition: match[1].trim(),
-                content: transformContent(part).trim()
-              });
-            }
-          } else if (part.startsWith('{@elseif')) {
-            // elseif 블록
-            const match = part.match(/\{@elseif\s*\(\s*(.*?)\s*\)}([\s\S]*)/);
-            if (match) {
-              blocks.push({
-                type: 'elseif',
-                condition: match[1].trim(),
-                content: transformContent(match[2]).trim()
-              });
-            }
-          } else if (part.startsWith('{@else}')) {
-            // else 블록
-            blocks.push({
-              type: 'else',
-              content: transformContent(part.substring(7)).trim()
-            });
-          }
-        }
-
-        cache.conditions.push({ groupName: ifId, blocks });
-        processedContent = processedContent.substring(0, ifStart) + `<!-- if:${ifId} -->` + processedContent.substring(ifEnd);
-        currentPos = ifStart + 1;
-      }
-
-      // loop 구문도 동일한 방식으로 처리
-      currentPos = 0;
-      while (true) {
-        const match = findOutermostMatch(processedContent, currentPos, 'loop');
-        if (!match) break;
-
-        const { start: loopStart, end: loopEnd } = match;
-        const fullMatch = processedContent.substring(loopStart, loopEnd);
-        const loopMatch = fullMatch.match(/{@loop\s+(\w+)\s+as\s+(\w+)}/);
-        
-        if (loopMatch) {
-          const [, arrayExpr, itemName] = loopMatch;
-          const loopId = `page_loop_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-          
-          // 내부 중첩 구조 처리
-          const innerContent = processContent(fullMatch.substring(fullMatch.indexOf('}') + 1, fullMatch.lastIndexOf('{/loop}')));
-          
-          cache.loops.push({
-            name: loopId,
-            arrayExpr,
-            itemName,
-            content: transformContent(innerContent).trim()
-          });
-
-          processedContent = processedContent.substring(0, loopStart) + `<!-- loop:${loopId} -->` + processedContent.substring(loopEnd);
-        }
-        currentPos = loopStart + 1;
-      }
-
-      return processedContent;
-    }
-
-    // 전체 내용 처리
-    cache.html = transformContent(processContent(content));
-
-    // 결과 반환
-    return JSON.stringify({
-      ...cache,
-      timestamp: Date.now()
-    }, null, 2);
-  }
-
-  // 캐시 파일 생성/삭제 함수
-  function handleCache(filePath: string, content?: string) {
-    const relativePath = path.relative(process.cwd(), filePath);
-    if (relativePath.startsWith('src/app')) {
-      const cachePath = path.join(
-        cacheDir,
-        relativePath.replace(/^src\/app/, 'app').replace(/\.[^.]+$/, '.json')
-      );
-
-      // 파일이 삭제된 경우
-      if (!content) {
-        if (fs.existsSync(cachePath)) {
-          fs.unlinkSync(cachePath);
-          
-          // 빈 디렉토리 정리
-          const cacheDir = path.dirname(cachePath);
-          if (fs.readdirSync(cacheDir).length === 0) {
-            fs.rmdirSync(cacheDir);
-          }
-        }
-        return null;
-      }
-
-      // 파일이 생성/수정된 경우
-      fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-      fs.writeFileSync(cachePath, content);
-      return cachePath;
-    }
-    return null;
   }
 
   return {
