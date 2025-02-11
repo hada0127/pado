@@ -35,11 +35,9 @@
 - page.ts를 컴파일하여 캐싱
 
 ### 미완료
-- 컴포넌트 기능 구현
+- 컴포넌트 기능(component.pado, component.ts, component.scss) 및 컴포넌트 import 구현
 - 컴포넌트의 props 기능 구현
-- component.pado, component.ts, component.scss 파일 구현
-- 폴더 기반 라우팅 구현
-- Tag, Script, Style 파일 구현 및 분리(page.pado, page.ts, page.scss)
+- src/app 폴더 기반 라우팅 구현
 - `[slug]` 기능 구현
 - `(group)` 기능 구현
 - Server 동작, Client 동작 파일 분리(page.server.ts , page.ts, page.pado)
