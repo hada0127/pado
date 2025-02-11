@@ -1,6 +1,6 @@
 {
   "name": "pado",
-  "version": "0.0.5",
+  "version": "0.1.1",
   "type": "module",
   "scripts": {
     "dev": "vite",

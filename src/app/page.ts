@@ -98,22 +98,22 @@ export const readonlyHandler = (element: HTMLInputElement) => {
 
 export const ifHandler = (element: HTMLInputElement) => {
   ifValue = Number(element.value);
-  pado({ ifValue, ifValue2 });
+  pado({ loopValue, loopValue2, ifValue, ifValue2 });
 };
 
 export const if2Handler = (element: HTMLInputElement) => {
   ifValue2 = element.value;
-  pado({ ifValue2 });
+  pado({ loopValue, loopValue2, ifValue, ifValue2 });
 };
 
 export const loopHandler = () => {
   // add item
   loopValue.push(loopValue.length + 1);
-  pado({ loopValue, ifValue2 });
+  pado({ loopValue, loopValue2, ifValue, ifValue2 });
 };
 
 export const loop2Handler = () => {
   // add item
   loopValue2.push({ name: 'John', age: 20 });
-  pado({ loopValue2 });
+  pado({ loopValue, loopValue2, ifValue, ifValue2 });
 };

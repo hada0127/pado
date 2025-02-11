@@ -229,20 +229,111 @@ export default function padoPlugin(): Plugin {
   }
 
   // pado 파일 전체 변환 처리
-  function transformPadoContent(content: string, filePath: string): string {
-    // 1. 조건부 렌더링 처리
-    const { html: processedContent, conditions } = processConditionals(content, filePath);
+  function transformPadoContent(content: string, padoPath: string): string {
+    const cache = {
+      html: '',
+      conditions: [] as any[],
+      loops: [] as any[]
+    };
 
-    // 2. 반복문 처리
-    const { html: processedWithLoops, loops } = processLoops(processedContent, filePath, { value: conditions.length });
+    // 중첩된 구조를 재귀적으로 처리하는 함수
+    function processContent(content: string): string {
+      function processStructure(content: string): string {
+        let processedContent = content;
 
-    // 3. 전체 컨텐츠 변환
-    const transformedHtml = transformContent(processedWithLoops);
+        // if 구문 처리
+        processedContent = processedContent.replace(
+          /{@if\s*\((.*?)\)}([\s\S]*?)(?:{@elseif\s*\((.*?)\)}([\s\S]*?))*(?:{@else}([\s\S]*?))?{\/if}/g,
+          (fullMatch) => {
+            const ifId = `page_if_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const blocks: Array<{
+              type: 'if' | 'elseif' | 'else';
+              condition?: string;
+              content: string;
+            }> = [];
 
+            // if 블록 처리
+            const ifMatch = fullMatch.match(/{@if\s*\((.*?)\)}([\s\S]*?)(?={@elseif|{@else|{\/if})/);
+            if (ifMatch) {
+              const processedIfContent = processStructure(ifMatch[2]);
+              blocks.push({
+                type: 'if',
+                condition: ifMatch[1],
+                content: transformContent(processedIfContent).trim()
+              });
+
+              // elseif 블록들 처리
+              const elseifMatches = fullMatch.matchAll(/{@elseif\s*\((.*?)\)}([\s\S]*?)(?={@elseif|{@else|{\/if})/g);
+              for (const match of Array.from(elseifMatches)) {
+                const processedElseifContent = processStructure(match[2]);
+                blocks.push({
+                  type: 'elseif',
+                  condition: match[1],
+                  content: transformContent(processedElseifContent).trim()
+                });
+              }
+
+              // else 블록 처리
+              const elseMatch = fullMatch.match(/{@else}([\s\S]*?){\/if}/);
+              if (elseMatch) {
+                const processedElseContent = processStructure(elseMatch[1]);
+                blocks.push({
+                  type: 'else',
+                  content: transformContent(processedElseContent).trim()
+                });
+              }
+            }
+
+            cache.conditions.push({ groupName: ifId, blocks });
+            return `<!-- if:${ifId} -->`;
+          }
+        );
+
+        // loop 구문 처리 - 내부의 if문도 처리
+        processedContent = processedContent.replace(
+          /{@loop\s+(\w+)\s+as\s+(\w+)}([\s\S]*?){\/loop}/g,
+          (_, arrayExpr, itemName, loopContent) => {
+            const loopId = `page_loop_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            
+            // 내부의 중첩 구조 먼저 처리
+            const processedLoopContent = processStructure(loopContent);
+            
+            // 처리되지 않은 if/else 태그 제거
+            const cleanedContent = processedLoopContent
+              .replace(/{@else}[\s\S]*?{\/if}/g, '')  // else 블록 제거
+              .replace(/{\/if}/g, '');  // 남은 /if 태그 제거
+            
+            cache.loops.push({
+              name: loopId,
+              arrayExpr,
+              itemName,
+              content: transformContent(cleanedContent).trim()
+            });
+
+            return `<!-- loop:${loopId} -->`;
+          }
+        );
+
+        return processedContent;
+      }
+
+      // 모든 중첩 구조가 처리될 때까지 반복
+      let prevContent;
+      let currentContent = content;
+      do {
+        prevContent = currentContent;
+        currentContent = processStructure(prevContent);
+      } while (currentContent !== prevContent);
+
+      return currentContent;
+    }
+
+    // 전체 내용 처리
+    cache.html = transformContent(processContent(content));
+
+    // 결과 반환
     return JSON.stringify({
-      html: transformedHtml,
-      conditions,
-      loops,
+      ...cache,
       timestamp: Date.now()
     }, null, 2);
   }

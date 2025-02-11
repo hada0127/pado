@@ -137,37 +137,38 @@ const pado = function(variables: Record<string, unknown>): void {
           vars[tempVarName] = array[Number(index)];
           return tempVarName;
         }
-        return '';
+        return 'undefined';
       });
 
       // 매개변수와 표현식 안전하게 처리
       const keys = Object.keys(vars).filter((key) => /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key));
       const values = keys.map((key) => vars[key]);
 
-      // 표현식 정리 및 문자열 리터럴 처리
+      // 표현식에 문자열 리터럴이 포함되어 있는지 확인
+      const hasStringLiteral = /^[^'"]*['"][^'"]*$/.test(processedExpr);
+      
+      // 표현식이 문자열 연결을 포함하는 경우
+      if (processedExpr.includes(' is ') || hasStringLiteral) {
+        // 문자열 연결 표현식으로 처리
+        const parts = processedExpr.split(/\s+is\s+/);
+        if (parts.length > 1) {
+          return parts.join(' ');
+        }
+        return processedExpr;
+      }
+
+      // 일반 표현식 처리
       const cleanExpr = processedExpr
         .trim()
         .replace(/[\n\r]/g, '')
-        // 문자열 리터럴 처리 (작은따옴표와 큰따옴표 모두 처리)
-        .replace(/'([^']*)'|"([^"]*)"/g, (match) => {
-          if (match.startsWith("'") || match.startsWith('"')) {
-            return JSON.stringify(match.slice(1, -1));
-          }
-          return match;
-        })
-        // 중괄호 표현식 처리
         .replace(/\{([^}]+)\}/g, '$1');
 
-      // 함수 생성 및 실행
       const functionBody = `try { return ${cleanExpr}; } catch(e) { return undefined; }`;
-
-      // 안전한 함수 생성
       const func = new Function(...keys, functionBody);
-
       return func(...values);
     } catch (error) {
       console.error('Error evaluating expression:', expression, error);
-      return undefined;
+      return expression; // 에러 시 원본 표현식 반환
     }
   }
 
@@ -203,8 +204,7 @@ const pado = function(variables: Record<string, unknown>): void {
 
   // 조건부 렌더링 처리
   function processConditionalRendering(argsMap: Map<string, unknown>, updatedVars: Set<string>, root: ParentNode = document.body) {
-    // 조건 평가 결과를 캐시하는 맵
-    const evaluationCache = new Map<string, string>();
+    
 
     // DOM 순회하면서 조건부 렌더링 처리
     const walker = document.createTreeWalker(
@@ -263,11 +263,130 @@ const pado = function(variables: Record<string, unknown>): void {
 
       // 새 내용 삽입
       if (content) {
+        // 중첩된 loop 처리
+        if (content.includes('{@loop')) {
+          // 먼저 loop의 전체 내용을 추출
+          const loopMatches = content.match(/{@loop\s+(\w+)\s+as\s+(\w+)}([\s\S]*?){\/loop}/g);
+          
+          if (loopMatches) {
+            loopMatches.forEach(fullMatch => {
+              const [_, arrayExpr, itemName] = fullMatch.match(/{@loop\s+(\w+)\s+as\s+(\w+)}/)!;
+              const loopContent = fullMatch.slice(
+                fullMatch.indexOf('}') + 1,
+                fullMatch.lastIndexOf('{/loop}')
+              );
+
+              // 고유한 loop ID 생성
+              const loopId = `page_loop_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+              
+              // loopsMap에 추가
+              loopsMap.set(loopId, {
+                name: loopId,
+                arrayExpr,
+                itemName,
+                content: loopContent
+              });
+
+              // 원본 loop 태그를 comment로 교체
+              content = content.replace(fullMatch, `<!-- loop:${loopId} -->`);
+            });
+          }
+        }
+
         const template = document.createElement('template');
         template.innerHTML = content.trim();
+
+        // 중첩된 구조 처리
+        processNestedStructures(template.content, argsMap, updatedVars);
+
         commentNode.after(template.content);
       }
     }
+  }
+
+  // 재귀적으로 중첩된 구조를 처리하는 함수
+  function processNestedStructures(element: ParentNode, itemMap: Map<string, unknown>, updatedVars: Set<string>) {
+    // 중첩된 loop 처리
+    const loopWalker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_COMMENT,
+      null
+    );
+
+    let node;
+    while ((node = loopWalker.nextNode())) {
+      const commentNode = node as Comment;
+      const loopMatch = commentNode.textContent?.trim().match(/^loop:([^>]+)$/);
+      if (loopMatch) {
+        const name = loopMatch[1].trim();
+        const loop = loopsMap.get(name);
+        if (loop) {
+          // 배열 평가
+          const array = evaluateExpression(loop.arrayExpr, new Map([...itemMap, ...itemMap])) as unknown[];
+          if (Array.isArray(array)) {
+            // 기존 내용 제거
+            while (commentNode.nextSibling && !(commentNode.nextSibling instanceof Comment)) {
+              commentNode.nextSibling.remove();
+            }
+
+            // 새 내용 생성
+            const fragment = document.createDocumentFragment();
+            array.forEach((item, index) => {
+              const nestedItemMap = new Map([...itemMap]);
+              nestedItemMap.set('index', index);
+              nestedItemMap.set(loop.itemName, item);
+              nestedItemMap.set(`${loop.arrayExpr}[${index}]`, item);
+
+              const template = document.createElement('template');
+              template.innerHTML = loop.content;
+
+              // 중첩된 구조 처리 - 상위 스코프의 변수도 포함
+              processNestedStructures(template.content, nestedItemMap, new Set([...updatedVars, loop.arrayExpr]));
+
+              fragment.appendChild(template.content);
+            });
+
+            commentNode.after(fragment);
+          }
+        }
+      }
+    }
+
+    // 중첩된 if 처리
+    processConditionalRendering(itemMap, updatedVars, element);
+
+    // pado- 속성 처리
+    const elements = element.querySelectorAll('*');
+    elements.forEach(element => {
+      Array.from(element.attributes)
+        .filter(attr => attr.name.startsWith('pado-'))
+        .forEach(attr => {
+          const originalAttrName = attr.name.replace('pado-', '');
+          // 상위 스코프의 변수도 포함하여 평가
+          const value = evaluateExpression(attr.value, new Map([...itemMap, ...itemMap]));
+          // boolean 속성 처리
+          if (['checked', 'disabled', 'readonly'].includes(originalAttrName)) {
+            const boolValue = Boolean(value);
+            if (boolValue) {
+              element.setAttribute(originalAttrName, '');
+            } else {
+              element.removeAttribute(originalAttrName);
+            }
+          }
+          // value 속성 처리
+          else if (originalAttrName === 'value') {
+            element.setAttribute(originalAttrName, String(value));
+          }
+          // text 속성 처리
+          else if (originalAttrName === 'text') {
+            element.textContent = String(value);
+          }
+          // 기타 속성 처리
+          else {
+            element.setAttribute(originalAttrName, String(value));
+          }
+        });
+    });
   }
 
   // processLoopRendering 함수 수정
@@ -324,81 +443,11 @@ const pado = function(variables: Record<string, unknown>): void {
           }
         );
 
-        // 중첩된 if 처리를 위한 임시 div
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = content;
 
-        // 중첩된 if 처리
-        const walker = document.createTreeWalker(
-          tempDiv,
-          NodeFilter.SHOW_COMMENT,
-          null
-        );
-
-        let ifNode;
-        while ((ifNode = walker.nextNode())) {
-          const ifCommentNode = ifNode as Comment;
-          const ifMatch = ifCommentNode.textContent?.trim().match(/^if:([^>]+)$/);
-          if (ifMatch) {
-            const groupName = ifMatch[1].trim();
-            const condition = conditionsMap.get(groupName);
-            if (condition) {
-              // 모든 변수를 업데이트 대상으로 처리
-              const allVars = new Set([
-                ...updatedVars,
-                ...Array.from(itemMap.keys()),
-                ...condition.blocks
-                  .filter(block => block.condition)
-                  .flatMap(block => getExpressionVars(block.condition!))
-              ]);
-              
-              // 중첩된 if 처리
-              processConditionalRendering(itemMap, allVars, tempDiv);
-            }
-          }
-        }
-
-        // pado- 속성 처리
-        const elements = tempDiv.querySelectorAll('*');
-        elements.forEach(element => {
-          Array.from(element.attributes)
-            .filter(attr => attr.name.startsWith('pado-'))
-            .forEach(attr => {
-              const originalAttrName = attr.name.replace('pado-', '');
-              const expr = attr.value.replace(
-                new RegExp(`${loop.itemName}(\\.\\w+)?(?=}|\\s)`, 'g'),
-                (match) => {
-                  if (match.includes('.')) {
-                    return match.replace(`${loop.itemName}.`, `${loop.arrayExpr}[${index}].`);
-                  }
-                  return `${loop.arrayExpr}[${index}]`;
-                }
-              );
-              const value = evaluateExpression(expr, itemMap);
-
-              // boolean 속성 처리
-              if (['checked', 'disabled', 'readonly'].includes(originalAttrName)) {
-                const boolValue = Boolean(value);
-                if (boolValue) {
-                  element.setAttribute(originalAttrName, '');
-                } else {
-                  element.removeAttribute(originalAttrName);
-                }
-              }
-              // value 속성 처리
-              else if (originalAttrName === 'value') {
-                element.setAttribute(originalAttrName, String(value));
-              }
-              // text 속성 처리
-              else if (originalAttrName === 'text') {
-                element.textContent = String(value);
-              }
-              // 기타 속성 처리
-              else {
-                element.setAttribute(originalAttrName, String(value));
-              }
-            });
-        });
+        // 중첩된 구조 처리
+        processNestedStructures(tempDiv, itemMap, updatedVars);
 
         content = tempDiv.innerHTML;
         template.innerHTML = content;

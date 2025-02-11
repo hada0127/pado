@@ -141,8 +141,23 @@ onchange={rangeHandler(this)} />
   <div>2Depth @ifValue2: <span>{ifValue2}</span>
     {@if(ifValue2 === 'a')}
     <p>ifValue2 is a</p>
+    <div>
+      {@loop loopValue2 as item2}
+      <p>{item2.name} / {item2.age}</p>
+      {/loop}
+    </div>
     {@elseif(ifValue2 === 'b')}
     <p>ifValue2 is b</p>
+    <div>
+      <p>ifValue2 is b</p>
+      {@if(ifValue === 1)}
+      <p>ifValue is 1</p>
+      {@elseif(ifValue === 2)}
+      <p>ifValue is 2</p>
+      {@else}
+      <p>ifValue is not 1, 2</p>
+      {/if}
+    </div>
     {@else}
     <p>ifValue2 is not a, b</p>
     {/if}
