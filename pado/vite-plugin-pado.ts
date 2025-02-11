@@ -2,6 +2,9 @@ import type { Plugin } from 'vite';
 import fs from 'fs';
 import path from 'path';
 
+// 캐시 디렉토리 경로를 전역으로 설정
+const cacheDir = path.resolve('pado/cache');
+
 // HTML 특수문자 이스케이프 함수
 function escapeHtml(text: string): string {
   return text.replace(
@@ -153,10 +156,48 @@ function processNestedConditionals(content: string, fileId: string, counter: { v
   return { html: result, conditions };
 }
 
+function findScssImports(code: string): string[] {
+  const imports: string[] = [];
+  const regex = /import\s+(\w+)\s+from\s+['"](.+\.scss)(\?module)?['"]/g;
+  let match;
+  
+  while ((match = regex.exec(code)) !== null) {
+    imports.push(match[1]); // 스타일 변수명 저장
+  }
+  
+  return imports;
+}
+
+// SCSS 파일 캐싱 함수
+function handleScssCache(filePath: string, styles: string) {
+  const relativePath = path.relative(process.cwd(), filePath);
+  if (relativePath.startsWith('src/app')) {
+    const cachePath = path.join(
+      cacheDir,
+      relativePath.replace(/^src\/app/, 'app').replace(/\.module\.scss$/, '.json')
+    );
+
+    // 기존 캐시 파일이 있으면 스타일 정보 추가
+    if (fs.existsSync(cachePath)) {
+      const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+      cache.styles = styles;
+      fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
+    } else {
+      // 새로운 캐시 파일 생성
+      const cache = {
+        html: '',
+        conditions: [],
+        loops: [],
+        styles
+      };
+      fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+      fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
+    }
+  }
+}
 
 export default function padoPlugin(): Plugin {
   // 캐시 디렉토리 생성
-  const cacheDir = path.resolve('pado/cache');
   if (!fs.existsSync(cacheDir)) {
     fs.mkdirSync(cacheDir, { recursive: true });
   }
@@ -341,9 +382,37 @@ export default function padoPlugin(): Plugin {
     configureServer(server) {
       // 파일 시스템 이벤트 감지
       const watcher = server.watcher;
+      
+      // SCSS 파일 변경 감지
+      watcher.on('change', (file) => {
+        if (file.endsWith('.module.scss')) {
+          const content = fs.readFileSync(file, 'utf-8');
+          handleScssCache(file, content);
+          server.ws.send({ type: 'full-reload', path: '*' });
+        }
+      });
+
+      // SCSS 파일 삭제 감지
       watcher.on('unlink', (file) => {
-        if (file.endsWith('.pado')) {
-          handleCache(file);
+        if (file.endsWith('.module.scss')) {
+          const cachePath = path.join(
+            cacheDir,
+            path.relative('src/app', file).replace(/\.module\.scss$/, '.json')
+          );
+          if (fs.existsSync(cachePath)) {
+            const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+            delete cache.styles;
+            fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
+          }
+          server.ws.send({ type: 'full-reload', path: '*' });
+        }
+      });
+
+      // SCSS 파일 추가 감지
+      watcher.on('add', (file) => {
+        if (file.endsWith('.module.scss')) {
+          const content = fs.readFileSync(file, 'utf-8');
+          handleScssCache(file, content);
           server.ws.send({ type: 'full-reload', path: '*' });
         }
       });
@@ -376,6 +445,9 @@ export default function padoPlugin(): Plugin {
               const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
               let content = cache.html;
 
+              // 스타일 태그 추가
+              const styleContent = cache.styles ? `<style>${cache.styles}</style>` : '';
+
               // script 태그에 conditions와 loops 데이터 추가
               const conditionsScript = `<script>
 window.__PADO_CONDITIONS__ = ${JSON.stringify(cache.conditions)};
@@ -385,9 +457,9 @@ window.__PADO_LOOPS__ = ${JSON.stringify(cache.loops)};
               const tsPath = padoPath.replace(/\.pado$/, '.ts');
               if (fs.existsSync(tsPath)) {
                 const relativePath = '/' + path.relative('src', tsPath).replace(/\\/g, '/');
-                content = `${conditionsScript}\n<script type="module" src="${relativePath}"></script>\n${content}`;
+                content = `${styleContent}\n${conditionsScript}\n<script type="module" src="${relativePath}"></script>\n${content}`;
               } else {
-                content = `${conditionsScript}\n${content}`;
+                content = `${styleContent}\n${conditionsScript}\n${content}`;
               }
 
               return content;
@@ -411,6 +483,54 @@ window.__PADO_LOOPS__ = ${JSON.stringify(cache.loops)};
           return '';
         }
       );
+    },
+    transform(code, id) {
+      // SCSS 파일 처리
+      if (id.endsWith('.module.scss')) {
+        handleScssCache(id, code);
+        return null;
+      }
+
+      // TS 파일 처리
+      if (id.endsWith('.ts')) {
+        const moduleScssPath = id.replace('.ts', '.module.scss');
+        const hasModuleScss = fs.existsSync(moduleScssPath);
+        
+        if (hasModuleScss) {
+          let modifiedCode = code;
+          const fileName = path.basename(id, '.ts');
+          
+          // styles import 추가
+          if (!modifiedCode.includes('import styles from')) {
+            modifiedCode = `import styles from './${fileName}.module.scss';\n${modifiedCode}`;
+          }
+
+          // pado import 확인
+          if (!modifiedCode.includes('import pado from')) {
+            modifiedCode = `import pado from '@pado';\n${modifiedCode}`;
+          }
+
+          // 모든 pado 호출에 styles 추가
+          modifiedCode = modifiedCode.replace(
+            /pado\(\{([^}]*)\}\)/g,
+            (match, args) => {
+              const existingArgs = args.trim();
+              return `pado({${existingArgs ? `${existingArgs}, ` : ''}styles})`;
+            }
+          );
+          
+          // 초기 pado 호출이 없는 경우 추가
+          if (!modifiedCode.includes('pado({')) {
+            modifiedCode += `\npado({styles}); // Auto-initialized styles\n`;
+          }
+          
+          return {
+            code: modifiedCode,
+            map: null
+          };
+        }
+      }
+      return null;
     }
   };
 } 
