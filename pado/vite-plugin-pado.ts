@@ -170,7 +170,7 @@ function findScssImports(code: string): string[] {
 }
 
 // SCSS 파일 캐싱 함수
-function handleScssCache(filePath: string, styles: string) {
+async function handleScssCache(filePath: string, content: string) {
   const relativePath = path.relative(process.cwd(), filePath);
   if (relativePath.startsWith('src/app')) {
     const cachePath = path.join(
@@ -181,7 +181,7 @@ function handleScssCache(filePath: string, styles: string) {
     // 기존 캐시 파일이 있으면 스타일 정보 추가
     if (fs.existsSync(cachePath)) {
       const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
-      cache.styles = styles;
+      cache.styles = content;
       fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
     } else {
       // 새로운 캐시 파일 생성
@@ -189,7 +189,7 @@ function handleScssCache(filePath: string, styles: string) {
         html: '',
         conditions: [],
         loops: [],
-        styles
+        styles: content
       };
       fs.mkdirSync(path.dirname(cachePath), { recursive: true });
       fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
@@ -228,6 +228,44 @@ async function handleTsCache(filePath: string, code: string) {
       } catch (error) {
         console.error(`Error processing TypeScript file ${filePath}:`, error);
       }
+    }
+  }
+}
+
+// 연관 파일 처리 함수
+async function handleRelatedFiles(filePath: string) {
+  const basePath = filePath.replace(/\.(pado|ts|module\.scss)$/, '');
+  const padoPath = `${basePath}.pado`;
+  const tsPath = `${basePath}.ts`;
+  const scssPath = `${basePath}.module.scss`;
+
+  // 캐시 파일 경로
+  const cachePath = path.join(
+    cacheDir,
+    path.relative('src/app', padoPath).replace(/\.pado$/, '.json')
+  );
+
+  // .pado 파일이 존재하는 경우에만 처리
+  if (fs.existsSync(padoPath)) {
+    try {
+      // 1. .pado 파일 처리
+      const padoContent = fs.readFileSync(padoPath, 'utf-8');
+      const transformedContent = transformPadoContent(padoContent, padoPath);
+      handleCache(padoPath, transformedContent);
+
+      // 2. .ts 파일 처리
+      if (fs.existsSync(tsPath)) {
+        const tsContent = fs.readFileSync(tsPath, 'utf-8');
+        await handleTsCache(tsPath, tsContent);
+      }
+
+      // 3. .scss 파일 처리
+      if (fs.existsSync(scssPath)) {
+        const scssContent = fs.readFileSync(scssPath, 'utf-8');
+        await handleScssCache(scssPath, scssContent);
+      }
+    } catch (error) {
+      console.error(`Error processing related files for ${basePath}:`, error);
     }
   }
 }
@@ -416,59 +454,35 @@ export default function padoPlugin(): Plugin {
       }
     },
     configureServer(server) {
-      // 파일 시스템 이벤트 감지
       const watcher = server.watcher;
       
-      // SCSS 파일 변경 감지
-      watcher.on('change', (file) => {
-        if (file.endsWith('.module.scss')) {
-          const content = fs.readFileSync(file, 'utf-8');
-          handleScssCache(file, content);
-          server.ws.send({ type: 'full-reload', path: '*' });
-        }
-      });
-
-      // SCSS 파일 삭제 감지
-      watcher.on('unlink', (file) => {
-        if (file.endsWith('.module.scss')) {
-          const cachePath = path.join(
-            cacheDir,
-            path.relative('src/app', file).replace(/\.module\.scss$/, '.json')
-          );
-          if (fs.existsSync(cachePath)) {
-            const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
-            delete cache.styles;
-            fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
-          }
-          server.ws.send({ type: 'full-reload', path: '*' });
-        }
-      });
-
-      // SCSS 파일 추가 감지
-      watcher.on('add', (file) => {
-        if (file.endsWith('.module.scss')) {
-          const content = fs.readFileSync(file, 'utf-8');
-          handleScssCache(file, content);
-          server.ws.send({ type: 'full-reload', path: '*' });
-        }
-      });
-
-      // TS 파일 변경 감지
+      // 파일 변경 감지 통합
       watcher.on('change', async (file) => {
-        if (file.endsWith('.ts')) {
-          const content = fs.readFileSync(file, 'utf-8');
-          await handleTsCache(file, content);
+        if (file.match(/\.(pado|ts|module\.scss)$/)) {
+          await handleRelatedFiles(file);
+          server.ws.send({ type: 'full-reload', path: '*' });
+        }
+      });
+
+      // 파일 삭제 감지 통합
+      watcher.on('unlink', async (file) => {
+        if (file.match(/\.(pado|ts|module\.scss)$/)) {
+          await handleRelatedFiles(file);
+          server.ws.send({ type: 'full-reload', path: '*' });
+        }
+      });
+
+      // 파일 추가 감지 통합
+      watcher.on('add', async (file) => {
+        if (file.match(/\.(pado|ts|module\.scss)$/)) {
+          await handleRelatedFiles(file);
           server.ws.send({ type: 'full-reload', path: '*' });
         }
       });
     },
     handleHotUpdate({ file, server }) {
-      if (file.endsWith('.pado') || file.endsWith('.ts')) {
-        if (file.endsWith('.pado')) {
-          const padoContent = fs.readFileSync(file, 'utf-8');
-          const transformedContent = transformPadoContent(padoContent, file);
-          handleCache(file, transformedContent);
-        }
+      if (file.match(/\.(pado|ts|module\.scss)$/)) {
+        handleRelatedFiles(file);
         server.ws.send({ type: 'full-reload', path: '*' });
         return [];
       }
