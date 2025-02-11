@@ -7,6 +7,8 @@
 <h2>Expression</h2>
 <p>&lbrace;counterValue &plus; numberValue&rbrace; = {counterValue} + {numberValue} = {counterValue + numberValue}</p>
 <p>&lbrace;counterValue &plus; 1&rbrace; = {counterValue + 1}</p>
+<p>&lbrace;counterValue > 10&rbrace;: {counterValue > 10}</p>
+<p>&lbrace;counterValue >= 5 ? '5 이상' : '5 미만'&rbrace;: {counterValue >= 5 ? '5 이상' : '5 미만'}</p>
 
 <h2>Form</h2>
 <h3>Input[text]</h3>
@@ -142,14 +144,6 @@ onchange={rangeHandler(this)} />
     {@if(ifValue2 === 'a')}
     <p>ifValue2 is a</p>
     <div>
-      {@loop loopValue2 as item2}
-      <p>{item2.name} / {item2.age}</p>
-      {/loop}
-    </div>
-    {@elseif(ifValue2 === 'b')}
-    <p>ifValue2 is b</p>
-    <div>
-      <p>ifValue2 is b</p>
       {@if(ifValue === 1)}
       <p>ifValue is 1</p>
       {@elseif(ifValue === 2)}
@@ -157,6 +151,13 @@ onchange={rangeHandler(this)} />
       {@else}
       <p>ifValue is not 1, 2</p>
       {/if}
+    </div> 
+    {@elseif(ifValue2 === 'b')}
+    <p>ifValue2 is b</p>
+    <div>
+      {@loop loopValue2 as item2}
+      <p>{item2.name} / {item2.age}</p>
+      {/loop}
     </div>
     {@else}
     <p>ifValue2 is not a, b</p>
@@ -168,6 +169,6 @@ onchange={rangeHandler(this)} />
 <button onclick={loop2Handler()}>add item</button>
 <ul>
   {@loop loopValue2 as item}
-  <li>{item.name} / {item.age}</li>
+  <li>{item.name} / {item.age} / {item.age + 1} / {item.age >= 18 ? 'adult' : 'child'}</li>
   {/loop}
 </ul>

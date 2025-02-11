@@ -128,15 +128,23 @@ const pado = function(variables: Record<string, unknown>): void {
         vars[key] = value;
       }
 
-      // 배열 접근 표현식 처리
-      const arrayPattern = /(\w+)\[(\d+)\]/g;
-      const processedExpr = expression.replace(arrayPattern, (_, name, index) => {
+      // 문자열 연결 표현식 처리 ("is" 포함)
+      if (expression.includes(' is ')) {
+        const parts = expression.split(' is ');
+        return parts.join(' is ');
+      }
+
+      // 배열 인덱스 접근 처리
+      const arrayPattern = /(\w+)\[(\d+|\w+)\]/g;
+      const finalExpr = expression.replace(arrayPattern, (_, name, index) => {
         const array = vars[name];
         if (Array.isArray(array)) {
-          const tempVarName = `__temp_${name}_${index}`;
-          vars[tempVarName] = array[Number(index)];
+          const idx = isNaN(Number(index)) ? vars[index] : Number(index);
+          const tempVarName = `__temp_${name}_${idx}`;
+          vars[tempVarName] = array[Number(idx)];
           return tempVarName;
         }
+
         return 'undefined';
       });
 
@@ -144,21 +152,8 @@ const pado = function(variables: Record<string, unknown>): void {
       const keys = Object.keys(vars).filter((key) => /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key));
       const values = keys.map((key) => vars[key]);
 
-      // 표현식에 문자열 리터럴이 포함되어 있는지 확인
-      const hasStringLiteral = /^[^'"]*['"][^'"]*$/.test(processedExpr);
-      
-      // 표현식이 문자열 연결을 포함하는 경우
-      if (processedExpr.includes(' is ') || hasStringLiteral) {
-        // 문자열 연결 표현식으로 처리
-        const parts = processedExpr.split(/\s+is\s+/);
-        if (parts.length > 1) {
-          return parts.join(' ');
-        }
-        return processedExpr;
-      }
-
       // 일반 표현식 처리
-      const cleanExpr = processedExpr
+      const cleanExpr = finalExpr
         .trim()
         .replace(/[\n\r]/g, '')
         .replace(/\{([^}]+)\}/g, '$1');
@@ -168,7 +163,7 @@ const pado = function(variables: Record<string, unknown>): void {
       return func(...values);
     } catch (error) {
       console.error('Error evaluating expression:', expression, error);
-      return expression; // 에러 시 원본 표현식 반환
+      return expression;
     }
   }
 
@@ -263,36 +258,6 @@ const pado = function(variables: Record<string, unknown>): void {
 
       // 새 내용 삽입
       if (content) {
-        // 중첩된 loop 처리
-        if (content.includes('{@loop')) {
-          // 먼저 loop의 전체 내용을 추출
-          const loopMatches = content.match(/{@loop\s+(\w+)\s+as\s+(\w+)}([\s\S]*?){\/loop}/g);
-          
-          if (loopMatches) {
-            loopMatches.forEach(fullMatch => {
-              const [_, arrayExpr, itemName] = fullMatch.match(/{@loop\s+(\w+)\s+as\s+(\w+)}/)!;
-              const loopContent = fullMatch.slice(
-                fullMatch.indexOf('}') + 1,
-                fullMatch.lastIndexOf('{/loop}')
-              );
-
-              // 고유한 loop ID 생성
-              const loopId = `page_loop_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-              
-              // loopsMap에 추가
-              loopsMap.set(loopId, {
-                name: loopId,
-                arrayExpr,
-                itemName,
-                content: loopContent
-              });
-
-              // 원본 loop 태그를 comment로 교체
-              content = content.replace(fullMatch, `<!-- loop:${loopId} -->`);
-            });
-          }
-        }
-
         const template = document.createElement('template');
         template.innerHTML = content.trim();
 
@@ -306,52 +271,6 @@ const pado = function(variables: Record<string, unknown>): void {
 
   // 재귀적으로 중첩된 구조를 처리하는 함수
   function processNestedStructures(element: ParentNode, itemMap: Map<string, unknown>, updatedVars: Set<string>) {
-    // 중첩된 loop 처리
-    const loopWalker = document.createTreeWalker(
-      element,
-      NodeFilter.SHOW_COMMENT,
-      null
-    );
-
-    let node;
-    while ((node = loopWalker.nextNode())) {
-      const commentNode = node as Comment;
-      const loopMatch = commentNode.textContent?.trim().match(/^loop:([^>]+)$/);
-      if (loopMatch) {
-        const name = loopMatch[1].trim();
-        const loop = loopsMap.get(name);
-        if (loop) {
-          // 배열 평가
-          const array = evaluateExpression(loop.arrayExpr, new Map([...itemMap, ...itemMap])) as unknown[];
-          if (Array.isArray(array)) {
-            // 기존 내용 제거
-            while (commentNode.nextSibling && !(commentNode.nextSibling instanceof Comment)) {
-              commentNode.nextSibling.remove();
-            }
-
-            // 새 내용 생성
-            const fragment = document.createDocumentFragment();
-            array.forEach((item, index) => {
-              const nestedItemMap = new Map([...itemMap]);
-              nestedItemMap.set('index', index);
-              nestedItemMap.set(loop.itemName, item);
-              nestedItemMap.set(`${loop.arrayExpr}[${index}]`, item);
-
-              const template = document.createElement('template');
-              template.innerHTML = loop.content;
-
-              // 중첩된 구조 처리 - 상위 스코프의 변수도 포함
-              processNestedStructures(template.content, nestedItemMap, new Set([...updatedVars, loop.arrayExpr]));
-
-              fragment.appendChild(template.content);
-            });
-
-            commentNode.after(fragment);
-          }
-        }
-      }
-    }
-
     // 중첩된 if 처리
     processConditionalRendering(itemMap, updatedVars, element);
 
@@ -406,7 +325,6 @@ const pado = function(variables: Record<string, unknown>): void {
       const name = match[1].trim();
       const loop = loopsMap.get(name);
       if (!loop) continue;
-
       // 배열 표현식에 사용된 변수 확인
       const arrayVars = getExpressionVars(loop.arrayExpr);
       const hasUpdatedVar = arrayVars.some(v => updatedVars.has(v));
@@ -434,12 +352,16 @@ const pado = function(variables: Record<string, unknown>): void {
         
         // itemName을 배열 인덱스 형태로 변환
         content = content.replace(
-          new RegExp(`{${loop.itemName}(\\.\\w+)?}`, 'g'),
+          new RegExp(`{([^}]*${loop.itemName}[^}]*)}`, 'g'),
           (match) => {
-            if (match.includes('.')) {
-              return match.replace(`${loop.itemName}.`, `${loop.arrayExpr}[${index}].`);
+            const expr = match.slice(1, -1);
+            if (expr.includes('.')) {
+              return `{${expr.replace(`${loop.itemName}.`, `${loop.arrayExpr}[${index}].`)}}`;
             }
-            return `{${loop.arrayExpr}[${index}]}`;
+            if (expr === loop.itemName) {
+              return `{${loop.arrayExpr}[${index}]}`;
+            }
+            return `{${expr.replace(loop.itemName, `${loop.arrayExpr}[${index}]`)}}`;
           }
         );
 

@@ -19,7 +19,7 @@ let loopValue: number[] = [1, 2, 3];
 let loopValue2: {
   name: string;
   age: number;  
-}[] = [{ name: 'John', age: 20 }, { name: 'Jane', age: 21 }];
+}[] = [{ name: 'John', age: 16 }, { name: 'Jane', age: 21 }];
 
 // 초기 렌더링
 pado({ counterValue, textValue, numberValue, dateValue, timeValue, datetimeLocalValue, rangeValue, textareaValue, selectValue, checkboxValue, radioValue, disabledValue, readonlyValue, ifValue, ifValue2, loopValue, loopValue2 });

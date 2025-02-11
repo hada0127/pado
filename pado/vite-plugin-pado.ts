@@ -4,13 +4,17 @@ import path from 'path';
 
 // HTML 특수문자 이스케이프 함수
 function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, char => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;'
-  }[char] || char));
+  return text.replace(
+    /[&<>"']/g,
+    (char) =>
+      ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[char] || char)
+  );
 }
 
 // 공통 컨텐츠 변환 함수
@@ -92,11 +96,11 @@ function processNestedConditionals(content: string, fileId: string, counter: { v
 
     if (depth === 0) {
       // 완전한 if 블록을 찾음
-      const fullMatch = result.slice(ifStart, ifEnd);
+      const fullMatch = result.substring(ifStart, ifEnd);
       const ifConditionMatch = fullMatch.match(/{@if\(([^)]+)\)}/);
       if (ifConditionMatch) {
         const ifCondition = ifConditionMatch[1];
-        const innerContent = fullMatch.slice(ifConditionMatch[0].length, -5);  // -5 for '{/if}'
+        const innerContent = fullMatch.substring(ifConditionMatch[0].length, fullMatch.length - 5);  // -5 for '{/if}'
 
         const groupName = `${fileId}_if_${counter.value++}`;
         const blocks: Array<{
@@ -123,7 +127,7 @@ function processNestedConditionals(content: string, fileId: string, counter: { v
         for (let i = 1; i < parts.length; i++) {
           const part = parts[i];
           if (part.startsWith('{@elseif(')) {
-            const elseifMatch = part.match(/{@elseif\(([^)]+)\)}([\s\S]*)/);
+            const elseifMatch = part.match(/{@elseif\s*\(([^)]+)\)}([\s\S]*)/);
             if (elseifMatch) {
               blocks.push({
                 type: 'elseif',
@@ -140,7 +144,7 @@ function processNestedConditionals(content: string, fileId: string, counter: { v
         }
 
         conditions.push({ groupName, blocks });
-        result = result.slice(0, ifStart) + `<!-- if:${groupName} -->` + result.slice(ifEnd);
+        result = result.substring(0, ifStart) + `<!-- if:${groupName} -->` + result.substring(ifEnd);
       }
     }
     startIndex = ifStart + 1;
@@ -149,77 +153,6 @@ function processNestedConditionals(content: string, fileId: string, counter: { v
   return { html: result, conditions };
 }
 
-// 기존 processConditionals 함수 수정
-function processConditionals(html: string, filePath: string): {
-  html: string;
-  conditions: Array<{
-    groupName: string;
-    blocks: Array<{
-      type: 'if' | 'elseif' | 'else';
-      condition?: string;
-      content: string;
-    }>;
-  }>;
-} {
-  const relativePath = path.relative(path.join(process.cwd(), 'src', 'app'), filePath);
-  const fileId = relativePath.replace(/\.pado$/, '').replace(/[\\/]/g, '_');
-  
-  return processNestedConditionals(html, fileId, { value: 0 });
-}
-
-// 타입 정의 추가
-type Loop = {
-  name: string;
-  arrayExpr: string;
-  itemName: string;
-  content: string;
-};
-
-function processLoops(content: string, fileId: string, counter: { value: number }): {
-  html: string;
-  loops: Array<Loop>;
-} {
-  const loops: Array<Loop> = [];
-  let result = content;
-  let startIndex = 0;
-
-  while (startIndex < result.length) {
-    const loopStart = result.indexOf('{@loop ', startIndex);
-    if (loopStart === -1) break;
-
-    // loop 끝 위치 찾기
-    const loopEnd = result.indexOf('{/loop}', loopStart);
-    if (loopEnd === -1) break;
-
-    // loop 구문 파싱
-    const fullMatch = result.slice(loopStart, loopEnd + 7);
-    const loopMatch = fullMatch.match(/{@loop\s+([^}\s]+)\s+as\s+([^}\s]+)}/);
-    
-    if (loopMatch) {
-      const [, arrayExpr, itemName] = loopMatch;
-      const innerContent = fullMatch.slice(loopMatch[0].length, -7).trim();
-
-      // 내부 컨텐츠 처리
-      const processedContent = transformContent(innerContent);
-
-      // if와 동일한 패턴으로 이름 생성 (상대 경로 사용)
-      const name = `${fileId.replace(/^.*?src\/app\//, '').split('.')[0]}_loop_${counter.value++}`;
-      loops.push({
-        name,
-        arrayExpr,
-        itemName,
-        content: processedContent
-      });
-
-      // loop 블록을 주석으로 대체
-      result = result.slice(0, loopStart) + `<!-- loop:${name} -->` + result.slice(loopEnd + 7);
-    }
-
-    startIndex = loopStart + 1;
-  }
-
-  return { html: result, loops };
-}
 
 export default function padoPlugin(): Plugin {
   // 캐시 디렉토리 생성
@@ -238,94 +171,122 @@ export default function padoPlugin(): Plugin {
 
     // 중첩된 구조를 재귀적으로 처리하는 함수
     function processContent(content: string): string {
-      function processStructure(content: string): string {
-        let processedContent = content;
+      let processedContent = content;
 
-        // if 구문 처리
-        processedContent = processedContent.replace(
-          /{@if\s*\((.*?)\)}([\s\S]*?)(?:{@elseif\s*\((.*?)\)}([\s\S]*?))*(?:{@else}([\s\S]*?))?{\/if}/g,
-          (fullMatch) => {
-            const ifId = `page_if_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            const blocks: Array<{
-              type: 'if' | 'elseif' | 'else';
-              condition?: string;
-              content: string;
-            }> = [];
+      // 가장 바깥쪽 if/loop를 찾아서 처리
+      function findOutermostMatch(str: string, start: number, type: 'if' | 'loop'): { start: number; end: number } | null {
+        const startTag = type === 'if' ? '{@if' : '{@loop';
+        const endTag = type === 'if' ? '{/if}' : '{/loop}';
+        
+        const tagStart = str.indexOf(startTag, start);
+        if (tagStart === -1) return null;
 
-            // if 블록 처리
-            const ifMatch = fullMatch.match(/{@if\s*\((.*?)\)}([\s\S]*?)(?={@elseif|{@else|{\/if})/);
-            if (ifMatch) {
-              const processedIfContent = processStructure(ifMatch[2]);
-              blocks.push({
-                type: 'if',
-                condition: ifMatch[1],
-                content: transformContent(processedIfContent).trim()
-              });
-
-              // elseif 블록들 처리
-              const elseifMatches = fullMatch.matchAll(/{@elseif\s*\((.*?)\)}([\s\S]*?)(?={@elseif|{@else|{\/if})/g);
-              for (const match of Array.from(elseifMatches)) {
-                const processedElseifContent = processStructure(match[2]);
-                blocks.push({
-                  type: 'elseif',
-                  condition: match[1],
-                  content: transformContent(processedElseifContent).trim()
-                });
-              }
-
-              // else 블록 처리
-              const elseMatch = fullMatch.match(/{@else}([\s\S]*?){\/if}/);
-              if (elseMatch) {
-                const processedElseContent = processStructure(elseMatch[1]);
-                blocks.push({
-                  type: 'else',
-                  content: transformContent(processedElseContent).trim()
-                });
-              }
+        let depth = 1;
+        let pos = tagStart + startTag.length;
+        
+        while (depth > 0 && pos < str.length) {
+          if (str.startsWith(startTag, pos)) {
+            depth++;
+            pos += startTag.length;
+          } else if (str.startsWith(endTag, pos)) {
+            depth--;
+            if (depth === 0) {
+              return { start: tagStart, end: pos + endTag.length };
             }
-
-            cache.conditions.push({ groupName: ifId, blocks });
-            return `<!-- if:${ifId} -->`;
+            pos += endTag.length;
+          } else {
+            pos++;
           }
-        );
-
-        // loop 구문 처리 - 내부의 if문도 처리
-        processedContent = processedContent.replace(
-          /{@loop\s+(\w+)\s+as\s+(\w+)}([\s\S]*?){\/loop}/g,
-          (_, arrayExpr, itemName, loopContent) => {
-            const loopId = `page_loop_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            
-            // 내부의 중첩 구조 먼저 처리
-            const processedLoopContent = processStructure(loopContent);
-            
-            // 처리되지 않은 if/else 태그 제거
-            const cleanedContent = processedLoopContent
-              .replace(/{@else}[\s\S]*?{\/if}/g, '')  // else 블록 제거
-              .replace(/{\/if}/g, '');  // 남은 /if 태그 제거
-            
-            cache.loops.push({
-              name: loopId,
-              arrayExpr,
-              itemName,
-              content: transformContent(cleanedContent).trim()
-            });
-
-            return `<!-- loop:${loopId} -->`;
-          }
-        );
-
-        return processedContent;
+        }
+        return null;
       }
 
-      // 모든 중첩 구조가 처리될 때까지 반복
-      let prevContent;
-      let currentContent = content;
-      do {
-        prevContent = currentContent;
-        currentContent = processStructure(prevContent);
-      } while (currentContent !== prevContent);
+      // if 구문 처리
+      let currentPos = 0;
+      while (true) {
+        const match = findOutermostMatch(processedContent, currentPos, 'if');
+        if (!match) break;
 
-      return currentContent;
+        const { start: ifStart, end: ifEnd } = match;
+        const fullMatch = processedContent.substring(ifStart, ifEnd);
+        const ifId = `page_if_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+        const blocks: Array<{
+          type: 'if' | 'elseif' | 'else';
+          condition?: string;
+          content: string;
+        }> = [];
+
+        // 내부 중첩 구조 먼저 처리
+        const innerContent = processContent(fullMatch.substring(fullMatch.indexOf('}') + 1, fullMatch.lastIndexOf('{/if}')));
+        
+        // if/elseif/else 블록 처리
+        const parts = innerContent.split(/(?={@elseif)|(?={@else})/);
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i];
+          if (i === 0) {
+            // if 블록
+            const match = fullMatch.match(/\{@if\s*\(\s*(.*?)\s*\)}/);
+            if (match) {
+              blocks.push({
+                type: 'if',
+                condition: match[1].trim(),
+                content: transformContent(part).trim()
+              });
+            }
+          } else if (part.startsWith('{@elseif')) {
+            // elseif 블록
+            const match = part.match(/\{@elseif\s*\(\s*(.*?)\s*\)}([\s\S]*)/);
+            if (match) {
+              blocks.push({
+                type: 'elseif',
+                condition: match[1].trim(),
+                content: transformContent(match[2]).trim()
+              });
+            }
+          } else if (part.startsWith('{@else}')) {
+            // else 블록
+            blocks.push({
+              type: 'else',
+              content: transformContent(part.substring(7)).trim()
+            });
+          }
+        }
+
+        cache.conditions.push({ groupName: ifId, blocks });
+        processedContent = processedContent.substring(0, ifStart) + `<!-- if:${ifId} -->` + processedContent.substring(ifEnd);
+        currentPos = ifStart + 1;
+      }
+
+      // loop 구문도 동일한 방식으로 처리
+      currentPos = 0;
+      while (true) {
+        const match = findOutermostMatch(processedContent, currentPos, 'loop');
+        if (!match) break;
+
+        const { start: loopStart, end: loopEnd } = match;
+        const fullMatch = processedContent.substring(loopStart, loopEnd);
+        const loopMatch = fullMatch.match(/{@loop\s+(\w+)\s+as\s+(\w+)}/);
+        
+        if (loopMatch) {
+          const [, arrayExpr, itemName] = loopMatch;
+          const loopId = `page_loop_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+          
+          // 내부 중첩 구조 처리
+          const innerContent = processContent(fullMatch.substring(fullMatch.indexOf('}') + 1, fullMatch.lastIndexOf('{/loop}')));
+          
+          cache.loops.push({
+            name: loopId,
+            arrayExpr,
+            itemName,
+            content: transformContent(innerContent).trim()
+          });
+
+          processedContent = processedContent.substring(0, loopStart) + `<!-- loop:${loopId} -->` + processedContent.substring(loopEnd);
+        }
+        currentPos = loopStart + 1;
+      }
+
+      return processedContent;
     }
 
     // 전체 내용 처리
