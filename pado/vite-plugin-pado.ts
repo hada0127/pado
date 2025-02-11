@@ -1,6 +1,7 @@
 import type { Plugin } from 'vite';
 import fs from 'fs';
 import path from 'path';
+import { transformWithEsbuild } from 'vite';
 
 // 캐시 디렉토리 경로를 전역으로 설정
 const cacheDir = path.resolve('pado/cache');
@@ -192,6 +193,41 @@ function handleScssCache(filePath: string, styles: string) {
       };
       fs.mkdirSync(path.dirname(cachePath), { recursive: true });
       fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
+    }
+  }
+}
+
+// TS 파일 처리 및 캐싱 함수
+async function handleTsCache(filePath: string, code: string) {
+  const relativePath = path.relative(process.cwd(), filePath);
+  if (relativePath.startsWith('src/app')) {
+    const cachePath = path.join(
+      cacheDir,
+      relativePath.replace(/^src\/app/, 'app').replace(/\.ts$/, '.json')
+    );
+
+    // 관련된 .pado 파일 경로
+    const padoPath = filePath.replace(/\.ts$/, '.pado');
+    
+    // .pado 파일이 존재하는 경우에만 처리
+    if (fs.existsSync(padoPath) && fs.existsSync(cachePath)) {
+      try {
+        // TS를 JS로 변환
+        const result = await transformWithEsbuild(code, filePath, {
+          loader: 'ts',
+          target: 'es2020',
+          format: 'esm',
+          minify: true,
+          treeShaking: true
+        });
+
+        // 캐시 파일 업데이트
+        const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+        cache.script = result.code;
+        fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
+      } catch (error) {
+        console.error(`Error processing TypeScript file ${filePath}:`, error);
+      }
     }
   }
 }
@@ -416,6 +452,15 @@ export default function padoPlugin(): Plugin {
           server.ws.send({ type: 'full-reload', path: '*' });
         }
       });
+
+      // TS 파일 변경 감지
+      watcher.on('change', async (file) => {
+        if (file.endsWith('.ts')) {
+          const content = fs.readFileSync(file, 'utf-8');
+          await handleTsCache(file, content);
+          server.ws.send({ type: 'full-reload', path: '*' });
+        }
+      });
     },
     handleHotUpdate({ file, server }) {
       if (file.endsWith('.pado') || file.endsWith('.ts')) {
@@ -484,7 +529,7 @@ window.__PADO_LOOPS__ = ${JSON.stringify(cache.loops)};
         }
       );
     },
-    transform(code, id) {
+    async transform(code, id) {
       // SCSS 파일 처리
       if (id.endsWith('.module.scss')) {
         handleScssCache(id, code);
@@ -523,6 +568,8 @@ window.__PADO_LOOPS__ = ${JSON.stringify(cache.loops)};
           if (!modifiedCode.includes('pado({')) {
             modifiedCode += `\npado({styles}); // Auto-initialized styles\n`;
           }
+          
+          await handleTsCache(id, code);
           
           return {
             code: modifiedCode,
