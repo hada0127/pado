@@ -299,8 +299,8 @@ export default function padoPlugin(): Plugin {
     }, null, 2);
   }
 
-  // 캐시 파일 생성 함수
-  function createCache(filePath: string, content: string) {
+  // 캐시 파일 생성/삭제 함수
+  function handleCache(filePath: string, content?: string) {
     const relativePath = path.relative(process.cwd(), filePath);
     if (relativePath.startsWith('src/app')) {
       const cachePath = path.join(
@@ -308,12 +308,23 @@ export default function padoPlugin(): Plugin {
         relativePath.replace(/^src\/app/, 'app').replace(/\.[^.]+$/, '.json')
       );
 
-      // 캐시 디렉토리 생성
+      // 파일이 삭제된 경우
+      if (!content) {
+        if (fs.existsSync(cachePath)) {
+          fs.unlinkSync(cachePath);
+          
+          // 빈 디렉토리 정리
+          const cacheDir = path.dirname(cachePath);
+          if (fs.readdirSync(cacheDir).length === 0) {
+            fs.rmdirSync(cacheDir);
+          }
+        }
+        return null;
+      }
+
+      // 파일이 생성/수정된 경우
       fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-
-      // 변환된 내용 저장
       fs.writeFileSync(cachePath, content);
-
       return cachePath;
     }
     return null;
@@ -321,18 +332,30 @@ export default function padoPlugin(): Plugin {
 
   return {
     name: 'vite-plugin-pado',
+    buildStart() {
+      // 초기 실행시 캐시 디렉토리 생성
+      if (!fs.existsSync(cacheDir)) {
+        fs.mkdirSync(cacheDir, { recursive: true });
+      }
+    },
+    configureServer(server) {
+      // 파일 시스템 이벤트 감지
+      const watcher = server.watcher;
+      watcher.on('unlink', (file) => {
+        if (file.endsWith('.pado')) {
+          handleCache(file);
+          server.ws.send({ type: 'full-reload', path: '*' });
+        }
+      });
+    },
     handleHotUpdate({ file, server }) {
       if (file.endsWith('.pado') || file.endsWith('.ts')) {
         if (file.endsWith('.pado')) {
           const padoContent = fs.readFileSync(file, 'utf-8');
           const transformedContent = transformPadoContent(padoContent, file);
-          createCache(file, transformedContent);
+          handleCache(file, transformedContent);
         }
-
-        server.ws.send({
-          type: 'full-reload',
-          path: '*'
-        });
+        server.ws.send({ type: 'full-reload', path: '*' });
         return [];
       }
     },
@@ -374,7 +397,7 @@ window.__PADO_LOOPS__ = ${JSON.stringify(cache.loops)};
           if (fs.existsSync(padoPath)) {
             const padoContent = fs.readFileSync(padoPath, 'utf-8');
             const transformedContent = transformPadoContent(padoContent, padoPath);
-            createCache(padoPath, transformedContent);
+            handleCache(padoPath, transformedContent);
 
             let finalContent = transformedContent;
             const tsPath = padoPath.replace(/\.pado$/, '.ts');
