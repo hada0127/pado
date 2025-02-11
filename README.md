@@ -34,7 +34,6 @@
 - ✅ .pado 파일이 보일시 같은 이름의 .ts파일 자동 로딩
 - ✅ SCSS Module 사용 (page.scss)
 - ✅ SCSS 캐싱
-- 빌드 및 Production 모드 구현
 
 ### 3차 (0.3.0)
 - 컴포넌트 기능 구현
