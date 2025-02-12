@@ -39,10 +39,10 @@
 - 쿼리 스트링 전달 기능 구현
 
 ### 미완료
+- layout.pado, layout.scss, layout.ts 구현
+- Server Side Script 구현 - client보다 먼저 실행 (page.server.ts)
 - 컴포넌트 기능(component.pado, component.ts, component.scss) 및 컴포넌트 import 구현
 - 컴포넌트의 props 기능 구현
-- Server Side Script 구현 - client보다 먼저 실행 (page.server.ts)
-- layout.pado, layout.scss, layout.ts 구현
 - 빌드 및 실행 구현
 
 ## 구현 현황
