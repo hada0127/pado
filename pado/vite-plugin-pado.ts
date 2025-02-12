@@ -669,12 +669,18 @@ export default function padoPlugin(): Plugin {
             }
           }
 
-          // 캐시된 JS 파일 요청 처리
+          // 미들웨어에서 Content-Type 헤더 설정
+          if (req.url.startsWith('/@vite/')) {
+            // Vite 내부 모듈 요청은 그대로 통과
+            next();
+            return;
+          }
+
           if (req.url.startsWith('/cache/')) {
             const jsPath = path.join(cacheDir, req.url.replace('/cache/', ''));
             if (fs.existsSync(jsPath)) {
               const content = fs.readFileSync(jsPath, 'utf-8');
-              res.setHeader('Content-Type', 'application/javascript');
+              res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
               res.end(content);
               return;
             }
@@ -721,18 +727,22 @@ export default function padoPlugin(): Plugin {
                     <head>
                       <meta charset="UTF-8">
                       <title>Pado</title>
+                      <base href="/">
                       ${styleContent}
                       ${conditionsScript}
-                      ${scriptContent}
-                      <script type="module" src="/@vite/client"></script>
                     </head>
                     <body>
                       ${cache.html}
+                      <script type="module">
+                        import '/@vite/client'
+                      </script>
+                      ${scriptContent}
                     </body>
                   </html>
                 `;
 
-                res.setHeader('Content-Type', 'text/html');
+                // HTML 응답
+                res.setHeader('Content-Type', 'text/html; charset=utf-8');
                 res.end(html);
                 return;
               }
