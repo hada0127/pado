@@ -18,11 +18,32 @@ let ifValue2: string = 'a';
 let loopValue: number[] = [1, 2, 3];
 let loopValue2: {
   name: string;
-  age: number;  
-}[] = [{ name: 'John', age: 16 }, { name: 'Jane', age: 21 }];
+  age: number;
+}[] = [
+  { name: 'John', age: 16 },
+  { name: 'Jane', age: 21 }
+];
 
 // 초기 렌더링
-pado({ counterValue, textValue, numberValue, dateValue, timeValue, datetimeLocalValue, rangeValue, textareaValue, selectValue, checkboxValue, radioValue, disabledValue, readonlyValue, ifValue, ifValue2, loopValue, loopValue2 });
+pado({
+  counterValue,
+  textValue,
+  numberValue,
+  dateValue,
+  timeValue,
+  datetimeLocalValue,
+  rangeValue,
+  textareaValue,
+  selectValue,
+  checkboxValue,
+  radioValue,
+  disabledValue,
+  readonlyValue,
+  ifValue,
+  ifValue2,
+  loopValue,
+  loopValue2
+});
 
 // 핸들러 정의
 

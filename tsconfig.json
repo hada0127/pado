@@ -15,8 +15,9 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@pado": ["./pado/pado.ts"]
-    }
+      "@pado": ["pado/pado.ts"]
+    },
+    "baseUrl": "."
   },
   "include": ["src", "pado/pado.ts"]
 } 

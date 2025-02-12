@@ -1,5 +1,5 @@
 <div class={styles.page}>
-  <h1>/test</h1>
+  <h1>/test/sub</h1>
   <h2>Counter</h2>
   <p>value: {counterValue}</p>
   <button onclick={counterIncreaseHandler}>increase</button>

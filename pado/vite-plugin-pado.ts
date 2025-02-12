@@ -169,100 +169,21 @@ function findScssImports(code: string): string[] {
   return imports;
 }
 
-// SCSS 파일 캐싱 함수
-async function handleScssCache(filePath: string, content: string) {
-  const relativePath = path.relative(process.cwd(), filePath);
-  if (relativePath.startsWith('src/app')) {
-    const cachePath = path.join(
-      cacheDir,
-      relativePath.replace(/^src\/app/, 'app').replace(/\.module\.scss$/, '.json')
-    );
-
-    // 기존 캐시 파일이 있으면 스타일 정보 추가
-    if (fs.existsSync(cachePath)) {
-      const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
-      cache.styles = content;
-      fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
-    } else {
-      // 새로운 캐시 파일 생성
-      const cache = {
-        html: '',
-        conditions: [],
-        loops: [],
-        styles: content
-      };
-      fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-      fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
-    }
+// uniqueId를 파일 경로 기반으로 생성하는 함수
+function generateUniqueId(filePath: string): string {
+  const basePath = filePath.replace(/\.(pado|ts|module\.scss)$/, '');
+  let hash = 0;
+  for (let i = 0; i < basePath.length; i++) {
+    const char = basePath.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
   }
+  return Math.abs(hash).toString(36).substring(0, 6);
 }
 
-// TS 파일 처리 및 캐싱 함수
-async function handleTsCache(filePath: string, code: string) {
-  const relativePath = path.relative(process.cwd(), filePath);
-  if (relativePath.startsWith('src/app')) {
-    const cachePath = path.join(
-      cacheDir,
-      relativePath.replace(/^src\/app/, 'app').replace(/\.ts$/, '.json')
-    );
-
-    // 관련된 .pado 파일 경로
-    const padoPath = filePath.replace(/\.ts$/, '.pado');
-    
-    // .pado 파일이 존재하는 경우에만 처리
-    if (fs.existsSync(padoPath) && fs.existsSync(cachePath)) {
-      try {
-        // TS를 JS로 변환
-        const result = await transformWithEsbuild(code, filePath, {
-          loader: 'ts',
-          target: 'es2020',
-          format: 'esm',
-          minify: true,
-          treeShaking: true
-        });
-
-        // 캐시 파일 업데이트
-        const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
-        cache.script = result.code;
-        fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
-      } catch (error) {
-        console.error(`Error processing TypeScript file ${filePath}:`, error);
-      }
-    }
-  }
-}
-
-// 캐시 파일 생성/삭제 함수
-function handleCache(filePath: string, content?: string) {
-  const relativePath = path.relative(process.cwd(), filePath);
-  if (relativePath.startsWith('src/app')) {
-    const cachePath = path.join(
-      cacheDir,
-      relativePath.replace(/^src\/app/, 'app').replace(/\.[^.]+$/, '.json')
-    );
-
-    // 파일이 삭제된 경우
-    if (!content) {
-      if (fs.existsSync(cachePath)) {
-        fs.unlinkSync(cachePath);
-        const cacheDir = path.dirname(cachePath);
-        if (fs.readdirSync(cacheDir).length === 0) {
-          fs.rmdirSync(cacheDir);
-        }
-      }
-      return null;
-    }
-
-    // 파일이 생성/수정된 경우
-    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-    fs.writeFileSync(cachePath, content);
-    return cachePath;
-  }
-  return null;
-}
-
-// transformPadoContent 함수를 여기로 이동
+// transformPadoContent 함수 수정
 function transformPadoContent(content: string, padoPath: string): string {
+  const uniqueId = generateUniqueId(padoPath);
   const cache = {
     html: '',
     conditions: [] as any[],
@@ -270,9 +191,17 @@ function transformPadoContent(content: string, padoPath: string): string {
     timestamp: Date.now()
   };
 
-  // 중첩된 구조를 재귀적으로 처리하는 함수
   function processContent(content: string): string {
     let processedContent = content;
+
+    // pado-class를 class로 변환하고 고유 ID 추가
+    processedContent = processedContent.replace(
+      /<div\s+pado-class="([^"]+)"/g,
+      (match, className) => {
+        const [obj, prop] = className.split('.');
+        return `<div class="_${prop}_${uniqueId}"`;
+      }
+    );
 
     // 가장 바깥쪽 if/loop를 찾아서 처리
     function findOutermostMatch(str: string, start: number, type: 'if' | 'loop'): { start: number; end: number } | null {
@@ -395,40 +324,165 @@ function transformPadoContent(content: string, padoPath: string): string {
   return JSON.stringify(cache, null, 2);
 }
 
-// 연관 파일 처리 함수
-async function handleRelatedFiles(filePath: string) {
-  const basePath = filePath.replace(/\.(pado|ts|module\.scss)$/, '');
-  const padoPath = `${basePath}.pado`;
-  const tsPath = `${basePath}.ts`;
-  const scssPath = `${basePath}.module.scss`;
+// SCSS 파일 캐싱 함수 수정
+async function handleScssCache(filePath: string, content: string, styleId: string) {
+  const relativePath = path.relative(process.cwd(), filePath);
+  if (relativePath.startsWith('src/app')) {
+    const cachePath = path.join(
+      cacheDir,
+      relativePath.replace(/^src\/app/, 'app').replace(/\.module\.scss$/, '.json')
+    );
 
-  // 캐시 파일 경로
+    try {
+      // 전달받은 styleId 사용
+      const modulizedCss = content.replace(/\.([a-zA-Z][a-zA-Z0-9_-]*)/g, (match, className) => {
+        return `._${className}_${styleId}`;
+      });
+
+      // 캐시 파일 업데이트
+      if (fs.existsSync(cachePath)) {
+        const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+        cache.styles = modulizedCss;
+        fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
+      } else {
+        const cache = {
+          html: '',
+          conditions: [],
+          loops: [],
+          styles: modulizedCss,
+          timestamp: Date.now()
+        };
+        fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+        fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
+      }
+    } catch (error) {
+      console.error(`Error processing SCSS file ${filePath}:`, error);
+    }
+  }
+}
+
+// TS 파일 처리 및 컴파일 함수
+async function handleTsCache(filePath: string, code: string) {
+  const relativePath = path.relative(process.cwd(), filePath);
+  if (relativePath.startsWith('src/app')) {
+    const jsPath = path.join(
+      cacheDir,
+      relativePath.replace(/^src\/app/, 'app').replace(/\.ts$/, '.js')
+    );
+
+    try {
+      // @pado import 경로 수정
+      const modifiedCode = code.replace(
+        /from\s+['"]@pado['"]/g,
+        'from "/pado/pado.js"'
+      );
+
+      // TS를 JS로 변환
+      const result = await transformWithEsbuild(modifiedCode, filePath, {
+        loader: 'ts',
+        target: 'es2020',
+        format: 'esm',
+        minify: true,
+        treeShaking: true
+      });
+
+      // JS 파일 저장
+      fs.mkdirSync(path.dirname(jsPath), { recursive: true });
+      fs.writeFileSync(jsPath, result.code);
+    } catch (error) {
+      console.error(`Error processing TypeScript file ${filePath}:`, error);
+    }
+  }
+}
+
+// 캐시 파일 생성/삭제 함수
+function handleCache(filePath: string, content?: string, styleId?: string) {
+  const relativePath = path.relative(process.cwd(), filePath);
+  if (relativePath.startsWith('src/app')) {
+    const cachePath = path.join(
+      cacheDir,
+      relativePath.replace(/^src\/app/, 'app').replace(/\.[^.]+$/, '.json')
+    );
+
+    // 파일이 삭제된 경우
+    if (!content) {
+      if (fs.existsSync(cachePath)) {
+        fs.unlinkSync(cachePath);
+        const cacheDir = path.dirname(cachePath);
+        if (fs.readdirSync(cacheDir).length === 0) {
+          fs.rmdirSync(cacheDir);
+        }
+      }
+      return null;
+    }
+
+    // 파일이 생성/수정된 경우
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    
+    // styleId가 있는 경우 HTML의 클래스 이름 업데이트
+    if (styleId) {
+      const cache = JSON.parse(content);
+      cache.html = cache.html.replace(
+        /pado-class="([^"]+)"/g,
+        (match, className) => {
+          const [obj, prop] = className.split('.');
+          return `class="_${prop}_${styleId}"`;
+        }
+      );
+      content = JSON.stringify(cache, null, 2);
+    }
+
+    fs.writeFileSync(cachePath, content);
+    return cachePath;
+  }
+  return null;
+}
+
+// 연관 파일 처리 함수 수정
+async function handleRelatedFiles(filePath: string) {
+  // 변경된 파일의 디렉토리 경로 찾기
+  const dir = path.dirname(filePath);
+  const baseName = path.basename(filePath).replace(/\.(pado|ts|module\.scss)$/, '');
+  
+  // page.pado 파일 찾기
+  const padoPath = path.join(dir, 'page.pado');
+  const tsPath = path.join(dir, 'page.ts');
+  const scssPath = path.join(dir, 'page.module.scss');
+
+  // 캐시 파일 경로 생성
+  const relativePath = path.relative(path.join(process.cwd(), 'src/app'), padoPath);
   const cachePath = path.join(
     cacheDir,
-    path.relative('src/app', padoPath).replace(/\.pado$/, '.json')
-  );
+    'app',
+    path.dirname(relativePath),
+    'page.json'
+  ).replace(/\\/g, '/');
 
   // .pado 파일이 존재하는 경우에만 처리
   if (fs.existsSync(padoPath)) {
     try {
+      fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+      const styleId = generateUniqueId(scssPath);
+
       // 1. .pado 파일 처리
       const padoContent = fs.readFileSync(padoPath, 'utf-8');
       const transformedContent = transformPadoContent(padoContent, padoPath);
-      handleCache(padoPath, transformedContent);
+      handleCache(padoPath, transformedContent, styleId);
 
-      // 2. .ts 파일 처리
+      // 2. .scss 파일 처리
+      if (fs.existsSync(scssPath)) {
+        const scssContent = fs.readFileSync(scssPath, 'utf-8');
+        await handleScssCache(scssPath, scssContent, styleId);
+      }
+
+      // 3. .ts 파일 처리
       if (fs.existsSync(tsPath)) {
         const tsContent = fs.readFileSync(tsPath, 'utf-8');
         await handleTsCache(tsPath, tsContent);
       }
 
-      // 3. .scss 파일 처리
-      if (fs.existsSync(scssPath)) {
-        const scssContent = fs.readFileSync(scssPath, 'utf-8');
-        await handleScssCache(scssPath, scssContent);
-      }
     } catch (error) {
-      console.error(`Error processing related files for ${basePath}:`, error);
+      console.error(`Error processing related files for ${dir}:`, error);
     }
   }
 }
@@ -464,33 +518,140 @@ export default function padoPlugin(): Plugin {
       watcher.on('change', async (file) => {
         if (file.match(/\.(pado|ts|module\.scss)$/)) {
           await handleRelatedFiles(file);
-          server.ws.send({ type: 'full-reload', path: '*' });
+          
+          // URL 경로 계산 수정
+          const relativePath = path.relative(path.join(process.cwd(), 'src/app'), file);
+          const dirPath = path.dirname(relativePath);
+          const urlPath = dirPath === '.' ? '/' : '/' + dirPath;
+          
+          console.log('urlPath:', urlPath);
+          console.log('dirPath:', dirPath);
+
+          // 모듈 캐시 초기화
+          server.moduleGraph.invalidateAll();
+
+          // 현재 페이지 새로고침
+          server.ws.send({
+            type: 'full-reload',
+            path: '*'
+          });
         }
       });
 
-      // 파일 삭제 감지 통합
+      // 파일 삭제/추가 감지도 동일하게 처리
       watcher.on('unlink', async (file) => {
         if (file.match(/\.(pado|ts|module\.scss)$/)) {
           await handleRelatedFiles(file);
-          server.ws.send({ type: 'full-reload', path: '*' });
+          server.moduleGraph.invalidateAll();
+          server.ws.send({
+            type: 'full-reload'
+          });
         }
       });
 
-      // 파일 추가 감지 통합
       watcher.on('add', async (file) => {
         if (file.match(/\.(pado|ts|module\.scss)$/)) {
           await handleRelatedFiles(file);
-          server.ws.send({ type: 'full-reload', path: '*' });
+          server.moduleGraph.invalidateAll();
+          server.ws.send({
+            type: 'full-reload'
+          });
         }
       });
+
+      // 라우팅 처리 추가
+      server.middlewares.use(async (req, res, next) => {
+        if (req.url && req.method === 'GET') {
+          // pado.js 파일 요청 처리
+          if (req.url === '/pado/pado.js') {
+            const padoTsPath = path.join(process.cwd(), 'pado/pado.ts');
+            if (fs.existsSync(padoTsPath)) {
+              try {
+                const content = fs.readFileSync(padoTsPath, 'utf-8');
+                const result = await transformWithEsbuild(content, padoTsPath, {
+                  loader: 'ts',
+                  target: 'es2020',
+                  format: 'esm',
+                  minify: true
+                });
+                res.setHeader('Content-Type', 'application/javascript');
+                res.end(result.code);
+                return;
+              } catch (error) {
+                console.error('Error compiling pado.ts:', error);
+              }
+            }
+          }
+
+          // 캐시된 JS 파일 요청 처리
+          if (req.url.startsWith('/cache/')) {
+            const jsPath = path.join(cacheDir, req.url.replace('/cache/', ''));
+            if (fs.existsSync(jsPath)) {
+              const content = fs.readFileSync(jsPath, 'utf-8');
+              res.setHeader('Content-Type', 'application/javascript');
+              res.end(content);
+              return;
+            }
+          }
+
+          // 기존 .pado 파일 처리
+          const urlPath = req.url === '/' ? '/page' : req.url;
+          const padoPath = path.join(process.cwd(), 'src/app', urlPath, 'page.pado');
+          
+          if (fs.existsSync(padoPath)) {
+            const cachePath = path.join(
+              cacheDir,
+              'app',
+              urlPath.slice(1),
+              'page.json'
+            ).replace(/\\/g, '/');
+
+            // 캐시 파일이 없으면 생성
+            if (!fs.existsSync(cachePath)) {
+              await handleRelatedFiles(padoPath);
+            }
+
+            if (fs.existsSync(cachePath)) {
+              const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+              
+              // HTML 응답 생성
+              const styleContent = cache.styles ? `<style>${cache.styles}</style>` : '';
+              const scriptPath = cachePath.replace(/\.json$/, '.js');
+              const scriptContent = fs.existsSync(scriptPath) 
+                ? `<script type="module" src="/cache${scriptPath.split('cache')[1]}"></script>`
+                : '';
+              const conditionsScript = `<script>
+                window.__PADO_CONDITIONS__ = ${JSON.stringify(cache.conditions)};
+                window.__PADO_LOOPS__ = ${JSON.stringify(cache.loops)};
+              </script>`;
+
+              const html = `
+                <!DOCTYPE html>
+                <html>
+                  <head>
+                    <meta charset="UTF-8">
+                    <title>Pado</title>
+                    ${styleContent}
+                    ${conditionsScript}
+                    ${scriptContent}
+                    <script type="module" src="/@vite/client"></script>
+                  </head>
+                  <body>
+                    ${cache.html}
+                  </body>
+                </html>
+              `;
+
+              res.setHeader('Content-Type', 'text/html');
+              res.end(html);
+              return;
+            }
+          }
+        }
+        next();
+      });
     },
-    handleHotUpdate({ file, server }) {
-      if (file.match(/\.(pado|ts|module\.scss)$/)) {
-        handleRelatedFiles(file);
-        server.ws.send({ type: 'full-reload', path: '*' });
-        return [];
-      }
-    },
+    
     async transformIndexHtml(html: string, { filename }) {
       return replaceAsync(
         html,
@@ -517,89 +678,23 @@ export default function padoPlugin(): Plugin {
 
               // script 태그에 conditions와 loops 데이터 추가
               const conditionsScript = `<script>
-window.__PADO_CONDITIONS__ = ${JSON.stringify(cache.conditions)};
-window.__PADO_LOOPS__ = ${JSON.stringify(cache.loops)};
-</script>`;
+                window.__PADO_CONDITIONS__ = ${JSON.stringify(cache.conditions)};
+                window.__PADO_LOOPS__ = ${JSON.stringify(cache.loops)};
+              </script>`;
               
-              const tsPath = padoPath.replace(/\.pado$/, '.ts');
-              if (fs.existsSync(tsPath)) {
-                const relativePath = '/' + path.relative('src', tsPath).replace(/\\/g, '/');
-                content = `${styleContent}\n${conditionsScript}\n<script type="module" src="${relativePath}"></script>\n${content}`;
-              } else {
-                content = `${styleContent}\n${conditionsScript}\n${content}`;
-              }
+              // 캐시된 JS 파일 경로 설정
+              const scriptPath = cachePath.replace(/\.json$/, '.js');
+              const scriptContent = fs.existsSync(scriptPath) 
+                ? `<script type="module" src="/cache${scriptPath.split('cache')[1]}"></script>`
+                : '';
 
+              content = `${styleContent}\n${conditionsScript}\n${scriptContent}\n${content}`;
               return content;
             }
-          }
-
-          if (fs.existsSync(padoPath)) {
-            const padoContent = fs.readFileSync(padoPath, 'utf-8');
-            const transformedContent = transformPadoContent(padoContent, padoPath);
-            handleCache(padoPath, transformedContent);
-
-            let finalContent = transformedContent;
-            const tsPath = padoPath.replace(/\.pado$/, '.ts');
-            if (fs.existsSync(tsPath)) {
-              const relativePath = '/' + path.relative('src', tsPath).replace(/\\/g, '/');
-              finalContent = `<script type="module" src="${relativePath}"></script>\n${finalContent}`;
-            }
-
-            return finalContent;
           }
           return '';
         }
       );
     },
-    async transform(code, id) {
-      // SCSS 파일 처리
-      if (id.endsWith('.module.scss')) {
-        handleScssCache(id, code);
-        return null;
-      }
-
-      // TS 파일 처리
-      if (id.endsWith('.ts')) {
-        const moduleScssPath = id.replace('.ts', '.module.scss');
-        const hasModuleScss = fs.existsSync(moduleScssPath);
-        
-        if (hasModuleScss) {
-          let modifiedCode = code;
-          const fileName = path.basename(id, '.ts');
-          
-          // styles import 추가
-          if (!modifiedCode.includes('import styles from')) {
-            modifiedCode = `import styles from './${fileName}.module.scss';\n${modifiedCode}`;
-          }
-
-          // pado import 확인
-          if (!modifiedCode.includes('import pado from')) {
-            modifiedCode = `import pado from '@pado';\n${modifiedCode}`;
-          }
-
-          // 모든 pado 호출에 styles 추가
-          modifiedCode = modifiedCode.replace(
-            /pado\(\{([^}]*)\}\)/g,
-            (match, args) => {
-              const existingArgs = args.trim();
-              return `pado({${existingArgs ? `${existingArgs}, ` : ''}styles})`;
-            }
-          );
-          
-          // 초기 pado 호출이 없는 경우 추가
-          if (!modifiedCode.includes('pado({')) {
-            modifiedCode += `\npado({styles}); // Auto-initialized styles\n`;
-          }
-          
-          await handleTsCache(id, code);
-          
-          return {
-            code: modifiedCode,
-            map: null
-          };
-        }
-      }
-      return null;
-    }
   };
 } 
