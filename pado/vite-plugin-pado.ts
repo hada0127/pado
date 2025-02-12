@@ -2,6 +2,7 @@ import type { Plugin } from 'vite';
 import fs from 'fs';
 import path from 'path';
 import { transformWithEsbuild } from 'vite';
+import { publicMimeTypes } from './settings/publicMimeTypes';
 
 // 캐시 디렉토리 경로를 전역으로 설정
 const cacheDir = path.resolve('pado/cache');
@@ -679,6 +680,17 @@ export default function padoPlugin(): Plugin {
               res.end(content);
               return;
             }
+          }
+
+          // public 폴더 내 파일 요청 처리
+          const publicPath = path.join(process.cwd(), 'public', req.url);
+          if (fs.existsSync(publicPath) && fs.statSync(publicPath).isFile()) {
+            const ext = path.extname(publicPath).toLowerCase();
+            const contentType = publicMimeTypes[ext] || 'application/octet-stream';
+            
+            res.setHeader('Content-Type', contentType);
+            fs.createReadStream(publicPath).pipe(res);
+            return;
           }
 
           // 기존 .pado 파일 처리

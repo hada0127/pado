@@ -1,4 +1,5 @@
 <div class={styles.page}>
+  <img src="/pado.svg" alt="Pado" style="width: 100px;" />
   <h1>/test</h1>
   <h2>Counter</h2>
   <p>value: {counterValue}</p>

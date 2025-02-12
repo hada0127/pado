@@ -39,6 +39,7 @@
 - 쿼리 스트링 전달 기능 구현
 
 ### 미완료
+- 정적 파일 서빙 (이미지 등)
 - layout.pado, layout.scss, layout.ts 구현
 - Server Side Script 구현 - client보다 먼저 실행 (page.server.ts)
 - 컴포넌트 기능(component.pado, component.ts, component.scss) 및 컴포넌트 import 구현
