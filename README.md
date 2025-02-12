@@ -44,6 +44,7 @@
 - Server 동작, Client 동작 파일 분리(page.server.ts , page.ts, page.pado)
 - Server Side Rendering 구현 (page.server.pado)
 - 컴포넌트의 Server Side Rendering 구현 (component.server.pado)
+- layout.pado, layout.scss, layout.ts 구현
 - 빌드 및 실행 구현
 
 ## 구현 현황

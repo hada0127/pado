@@ -1,3 +1,4 @@
 <h1>/test/[id]/[action]</h1>
 <p>id: {id}</p>
 <p>action: {action}</p>
+<p>{JSON.stringify(params)}</p>
