@@ -497,6 +497,62 @@ async function replaceAsync(str: string, regex: RegExp, asyncFn: (match: string,
   return str.replace(regex, () => data.shift() || '');
 }
 
+// URL 경로를 실제 파일 경로로 변환하는 함수
+function getActualPath(urlPath: string): string {
+  const appDir = path.join(process.cwd(), 'src/app');
+  const segments = urlPath.split('/').filter(Boolean);
+  
+  // 직접 경로 확인
+  const directPath = path.join(appDir, ...segments);
+  if (fs.existsSync(directPath)) {
+    return path.join('src/app', ...segments);
+  }
+
+  // 괄호 경로 검색 (재귀적으로 모든 가능한 경로 확인)
+  const findInDirectory = (dir: string, remainingSegments: string[]): string | null => {
+    if (remainingSegments.length === 0) return null;
+    
+    const items = fs.readdirSync(dir);
+    const segment = remainingSegments[0];
+    const nextSegments = remainingSegments.slice(1);
+
+    // 현재 세그먼트에 대한 모든 가능한 경로 확인
+    for (const item of items) {
+      const fullPath = path.join(dir, item);
+      if (fs.statSync(fullPath).isDirectory()) {
+        // 1. 일반 디렉토리 매칭
+        if (item === segment) {
+          if (nextSegments.length === 0) {
+            return path.join('src/app', path.relative(appDir, fullPath));
+          }
+          const found = findInDirectory(fullPath, nextSegments);
+          if (found) return found;
+        }
+        
+        // 2. 괄호 디렉토리 매칭
+        if (item.startsWith('(') && item.endsWith(')')) {
+          const innerSegment = item.slice(1, -1);
+          if (innerSegment === segment || segment === item.replace(/^\(([^)]+)\)$/, '$1')) {
+            if (nextSegments.length === 0) {
+              return path.join('src/app', path.relative(appDir, fullPath));
+            }
+            const found = findInDirectory(fullPath, nextSegments);
+            if (found) return found;
+          }
+        }
+        
+        // 3. 하위 디렉토리에서 현재 세그먼트 검색
+        const found = findInDirectory(fullPath, remainingSegments);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const found = findInDirectory(appDir, segments);
+  return found || '';
+}
+
 export default function padoPlugin(): Plugin {
   // 캐시 디렉토리 생성
   if (!fs.existsSync(cacheDir)) {
@@ -596,55 +652,59 @@ export default function padoPlugin(): Plugin {
 
           // 기존 .pado 파일 처리
           const urlPath = req.url === '/' ? '/page' : req.url;
-          const padoPath = path.join(process.cwd(), 'src/app', urlPath, 'page.pado');
+          const actualPath = getActualPath(urlPath);
           
-          if (fs.existsSync(padoPath)) {
-            const cachePath = path.join(
-              cacheDir,
-              'app',
-              urlPath.slice(1),
-              'page.json'
-            ).replace(/\\/g, '/');
+          if (actualPath) {
+            const padoPath = path.join(process.cwd(), actualPath, 'page.pado');
+            
+            if (fs.existsSync(padoPath)) {
+              const cachePath = path.join(
+                cacheDir,
+                'app',
+                actualPath.replace(/^src\/app\/?/, ''),
+                'page.json'
+              ).replace(/\\/g, '/');
 
-            // 캐시 파일이 없으면 생성
-            if (!fs.existsSync(cachePath)) {
-              await handleRelatedFiles(padoPath);
-            }
+              // 캐시 파일이 없으면 생성
+              if (!fs.existsSync(cachePath)) {
+                await handleRelatedFiles(padoPath);
+              }
 
-            if (fs.existsSync(cachePath)) {
-              const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
-              
-              // HTML 응답 생성
-              const styleContent = cache.styles ? `<style>${cache.styles}</style>` : '';
-              const scriptPath = cachePath.replace(/\.json$/, '.js');
-              const scriptContent = fs.existsSync(scriptPath) 
-                ? `<script type="module" src="/cache${scriptPath.split('cache')[1]}"></script>`
-                : '';
-              const conditionsScript = `<script>
-                window.__PADO_CONDITIONS__ = ${JSON.stringify(cache.conditions)};
-                window.__PADO_LOOPS__ = ${JSON.stringify(cache.loops)};
-              </script>`;
+              if (fs.existsSync(cachePath)) {
+                const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
+                
+                // HTML 응답 생성
+                const styleContent = cache.styles ? `<style>${cache.styles}</style>` : '';
+                const scriptPath = cachePath.replace(/\.json$/, '.js');
+                const scriptContent = fs.existsSync(scriptPath) 
+                  ? `<script type="module" src="/cache${scriptPath.split('cache')[1]}"></script>`
+                  : '';
+                const conditionsScript = `<script>
+                  window.__PADO_CONDITIONS__ = ${JSON.stringify(cache.conditions)};
+                  window.__PADO_LOOPS__ = ${JSON.stringify(cache.loops)};
+                </script>`;
 
-              const html = `
-                <!DOCTYPE html>
-                <html>
-                  <head>
-                    <meta charset="UTF-8">
-                    <title>Pado</title>
-                    ${styleContent}
-                    ${conditionsScript}
-                    ${scriptContent}
-                    <script type="module" src="/@vite/client"></script>
-                  </head>
-                  <body>
-                    ${cache.html}
-                  </body>
-                </html>
-              `;
+                const html = `
+                  <!DOCTYPE html>
+                  <html>
+                    <head>
+                      <meta charset="UTF-8">
+                      <title>Pado</title>
+                      ${styleContent}
+                      ${conditionsScript}
+                      ${scriptContent}
+                      <script type="module" src="/@vite/client"></script>
+                    </head>
+                    <body>
+                      ${cache.html}
+                    </body>
+                  </html>
+                `;
 
-              res.setHeader('Content-Type', 'text/html');
-              res.end(html);
-              return;
+                res.setHeader('Content-Type', 'text/html');
+                res.end(html);
+                return;
+              }
             }
           }
         }

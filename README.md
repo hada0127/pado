@@ -33,13 +33,13 @@
 - SCSS Module 사용 (page.scss)
 - SCSS 캐싱
 - page.ts를 컴파일하여 캐싱
+- src/app 폴더 기반 라우팅 구현
+- `(group)` 기능 구현
 
 ### 미완료
 - 컴포넌트 기능(component.pado, component.ts, component.scss) 및 컴포넌트 import 구현
 - 컴포넌트의 props 기능 구현
-- src/app 폴더 기반 라우팅 구현
 - `[slug]` 기능 구현
-- `(group)` 기능 구현
 - Server 동작, Client 동작 파일 분리(page.server.ts , page.ts, page.pado)
 - Server Side Rendering 구현 (page.server.pado)
 - 컴포넌트의 Server Side Rendering 구현 (component.server.pado)
@@ -47,6 +47,8 @@
 ## 구현 현황
 ### 2025-02-12
 - page.ts를 컴파일하여 캐싱
+- src/app 폴더 기반 라우팅 구현
+- `(group)` 기능 구현
 
 ### 2025-02-11
 - loop 구현 - 배열의 요소가 변경되면 변경된 요소를 인식하여 변경
