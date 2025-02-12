@@ -497,51 +497,88 @@ async function replaceAsync(str: string, regex: RegExp, asyncFn: (match: string,
   return str.replace(regex, () => data.shift() || '');
 }
 
-// URL 경로를 실제 파일 경로로 변환하는 함수
-function getActualPath(urlPath: string): string {
+// 동적 라우팅 파라미터를 저장할 타입 정의
+type RouteParams = {
+  [key: string]: string;
+};
+
+// URL 경로를 실제 파일 경로로 변환하는 함수 수정
+function getActualPath(urlPath: string): { path: string; params: RouteParams } {
   const appDir = path.join(process.cwd(), 'src/app');
-  const segments = urlPath.split('/').filter(Boolean);
+  
+  // URL에서 쿼리 스트링 제거
+  const [pathWithoutQuery] = urlPath.split('?');
+  const segments = pathWithoutQuery.split('/').filter(Boolean);
+  const params: RouteParams = {};
+  
+  // 쿼리 스트링 파싱하여 params에 추가
+  const queryString = urlPath.split('?')[1];
+  if (queryString) {
+    const searchParams = new URLSearchParams(queryString);
+    searchParams.forEach((value, key) => {
+      params[key] = value;
+    });
+  }
   
   // 직접 경로 확인
   const directPath = path.join(appDir, ...segments);
   if (fs.existsSync(directPath)) {
-    return path.join('src/app', ...segments);
+    return { path: path.join('src/app', ...segments), params };
   }
 
-  // 괄호 경로 검색 (재귀적으로 모든 가능한 경로 확인)
-  const findInDirectory = (dir: string, remainingSegments: string[]): string | null => {
+  // 괄호 경로와 동적 라우팅 검색 (기존 로직)
+  const findInDirectory = (dir: string, remainingSegments: string[]): { path: string; params: RouteParams } | null => {
     if (remainingSegments.length === 0) return null;
     
     const items = fs.readdirSync(dir);
     const segment = remainingSegments[0];
     const nextSegments = remainingSegments.slice(1);
 
-    // 현재 세그먼트에 대한 모든 가능한 경로 확인
     for (const item of items) {
       const fullPath = path.join(dir, item);
       if (fs.statSync(fullPath).isDirectory()) {
-        // 1. 일반 디렉토리 매칭
-        if (item === segment) {
+        // 1. 동적 라우팅 매칭 ([id] 형태)
+        if (item.startsWith('[') && item.endsWith(']')) {
+          const paramName = item.slice(1, -1);
+          params[paramName] = segment;
           if (nextSegments.length === 0) {
-            return path.join('src/app', path.relative(appDir, fullPath));
+            return { 
+              path: path.join('src/app', path.relative(appDir, fullPath)),
+              params 
+            };
           }
           const found = findInDirectory(fullPath, nextSegments);
           if (found) return found;
         }
         
-        // 2. 괄호 디렉토리 매칭
+        // 2. 일반 디렉토리 매칭 (기존 로직)
+        if (item === segment) {
+          if (nextSegments.length === 0) {
+            return { 
+              path: path.join('src/app', path.relative(appDir, fullPath)),
+              params 
+            };
+          }
+          const found = findInDirectory(fullPath, nextSegments);
+          if (found) return found;
+        }
+        
+        // 3. 괄호 디렉토리 매칭 (기존 로직)
         if (item.startsWith('(') && item.endsWith(')')) {
           const innerSegment = item.slice(1, -1);
           if (innerSegment === segment || segment === item.replace(/^\(([^)]+)\)$/, '$1')) {
             if (nextSegments.length === 0) {
-              return path.join('src/app', path.relative(appDir, fullPath));
+              return { 
+                path: path.join('src/app', path.relative(appDir, fullPath)),
+                params 
+              };
             }
             const found = findInDirectory(fullPath, nextSegments);
             if (found) return found;
           }
         }
         
-        // 3. 하위 디렉토리에서 현재 세그먼트 검색
+        // 4. 하위 디렉토리 검색
         const found = findInDirectory(fullPath, remainingSegments);
         if (found) return found;
       }
@@ -550,7 +587,10 @@ function getActualPath(urlPath: string): string {
   };
 
   const found = findInDirectory(appDir, segments);
-  return found || '';
+  return found ? { 
+    path: found.path, 
+    params: { ...found.params, ...params } // 동적 라우팅 파라미터와 쿼리 스트링 파라미터 병합
+  } : { path: '', params: {} };
 }
 
 export default function padoPlugin(): Plugin {
@@ -574,18 +614,8 @@ export default function padoPlugin(): Plugin {
       watcher.on('change', async (file) => {
         if (file.match(/\.(pado|ts|module\.scss)$/)) {
           await handleRelatedFiles(file);
-          
-          // URL 경로 계산 수정
-          const relativePath = path.relative(path.join(process.cwd(), 'src/app'), file);
-          const dirPath = path.dirname(relativePath);
-          const urlPath = dirPath === '.' ? '/' : '/' + dirPath;
-          
-          console.log('urlPath:', urlPath);
-          console.log('dirPath:', dirPath);
-
           // 모듈 캐시 초기화
           server.moduleGraph.invalidateAll();
-
           // 현재 페이지 새로고침
           server.ws.send({
             type: 'full-reload',
@@ -652,7 +682,7 @@ export default function padoPlugin(): Plugin {
 
           // 기존 .pado 파일 처리
           const urlPath = req.url === '/' ? '/page' : req.url;
-          const actualPath = getActualPath(urlPath);
+          const { path: actualPath, params } = getActualPath(urlPath);
           
           if (actualPath) {
             const padoPath = path.join(process.cwd(), actualPath, 'page.pado');
@@ -682,6 +712,7 @@ export default function padoPlugin(): Plugin {
                 const conditionsScript = `<script>
                   window.__PADO_CONDITIONS__ = ${JSON.stringify(cache.conditions)};
                   window.__PADO_LOOPS__ = ${JSON.stringify(cache.loops)};
+                  window.__PADO_PARAMS__ = ${JSON.stringify(params)}; // 라우팅 파라미터 전달
                 </script>`;
 
                 const html = `

@@ -26,6 +26,20 @@ type Loop = {
 // 캐시된 loops를 저장할 Map
 const loopsMap = new Map<string, Loop>();
 
+// 라우팅 파라미터 타입 정의
+export type RouteParams = {
+  [key: string]: string;
+};
+
+// window 전역 타입 확장
+declare global {
+  interface Window {
+    __PADO_PARAMS__: RouteParams;
+    __PADO_CONDITIONS__: any; // 기존 타입은 유지
+    __PADO_LOOPS__: any; // 기존 타입은 유지
+  }
+}
+
 const pado = function(variables: Record<string, unknown>): void {
   // 캐시된 조건들 로드
   async function loadConditions() {
@@ -498,5 +512,10 @@ const pado = function(variables: Record<string, unknown>): void {
     update();
   }
 } as PadoFunction;
+
+// getParams 함수에 타입 적용
+export function getParams(): RouteParams {
+  return window.__PADO_PARAMS__;
+}
 
 export default pado; 
