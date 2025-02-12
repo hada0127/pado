@@ -41,9 +41,7 @@
 ### 미완료
 - 컴포넌트 기능(component.pado, component.ts, component.scss) 및 컴포넌트 import 구현
 - 컴포넌트의 props 기능 구현
-- Server 동작, Client 동작 파일 분리(page.server.ts , page.ts, page.pado)
-- Server Side Rendering 구현 (page.server.pado)
-- 컴포넌트의 Server Side Rendering 구현 (component.server.pado)
+- Server Side Script 구현 - client보다 먼저 실행 (page.server.ts)
 - layout.pado, layout.scss, layout.ts 구현
 - 빌드 및 실행 구현
 
