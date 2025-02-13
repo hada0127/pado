@@ -4,13 +4,25 @@
 const folderStructure = `
 pado/
   pado.ts
-  vite-plugin-pado.ts
-  eslint-plugin-pado.ts
+  eslint/
+    eslintDevPlugin.ts
+  vite/
+    devPlugin.ts
+    makeCaches.ts
+    getHtmlFromCache.ts
+    utils.ts
+  settings/
+    publicMimeTypes.ts
 src/
   index.html
   app/
-    main.pado
-    madin.ts`;
+    page.module.scss
+    page.pado
+    page.ts
+  styles/
+    global.scss
+    mixins.scss  
+    `;
 
 // Additional instructions
 const additionalInstructions = `

@@ -12,7 +12,7 @@
   <p>&lbrace;counterValue > 10&rbrace;: {counterValue > 10}</p>
   <p>&lbrace;counterValue >= 5 ? '5 이상' : '5 미만'&rbrace;: {counterValue >= 5 ? '5 이상' : '5 미만'}</p>
 
-  <h2>Form</h2> 
+  <h2>Form</h2>
   <h3>Input[text]</h3>
   <input 
     type="text" 

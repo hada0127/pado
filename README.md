@@ -37,9 +37,11 @@
 - `(group)` 기능 구현
 - `[slug]` 기능 구현
 - 쿼리 스트링 전달 기능 구현
+- 정적 파일 서빙 (이미지 등)
 
 ### 미완료
-- 정적 파일 서빙 (이미지 등)
+- title 및 메타 태그 구현
+- global.scss, mixin.scss 구현
 - layout.pado, layout.scss, layout.ts 구현
 - Server Side Script 구현 - client보다 먼저 실행 (page.server.ts)
 - 컴포넌트 기능(component.pado, component.ts, component.scss) 및 컴포넌트 import 구현
@@ -47,6 +49,10 @@
 - 빌드 및 실행 구현
 
 ## 구현 현황
+### 2025-02-13
+- 정적 파일 서빙 (이미지 등)
+- 폴더 구조 변경 및 분할
+
 ### 2025-02-12
 - page.ts를 컴파일하여 캐싱
 - src/app 폴더 기반 라우팅 구현

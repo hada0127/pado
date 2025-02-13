@@ -1,5 +1,5 @@
 import { defineConfig } from 'vite';
-import pado from './pado/vite-plugin-pado';
+import padoDevPlugin from './pado/vite/viteDevPlugin';
 import path from 'path';
 
 export default defineConfig({
@@ -16,5 +16,5 @@ export default defineConfig({
       }
     ]
   },
-  plugins: [pado()]
+  plugins: [padoDevPlugin()]
 }); 
